@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Connection, Transaction } from '@solana/web3.js';
 import { useWallet, WalletButton, base64ToBytes } from '../wallet';
-import { ApiError, buildIntentTx, confirmIntent, getIntent, loginUrl, type IntentView } from '../api';
+import { ApiError, buildIntentTx, confirmIntent, getAccount, getIntent, loginUrl, type IntentView } from '../api';
 
 // A single shared RPC connection, replacing useConnection() from the adapter.
 const connection = new Connection(
@@ -25,6 +25,10 @@ export default function Approve() {
   const load = useCallback(async () => {
     if (!id) return;
     try {
+      // Fetch the account first: this is what populates the CSRF token that
+      // the approve/confirm POSTs require. The dashboard does this implicitly;
+      // this page is often opened directly from an X link, so it must too.
+      await getAccount();
       const view = await getIntent(id);
       setIntent(view);
       if (view.signature) setSignature(view.signature);
