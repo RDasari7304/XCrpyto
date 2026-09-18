@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "api": "tsx watch src/server.ts",
-    "build:web": "cd web && npm ci && npm run build",
+    "build:web": "cd web && npm install && npm run build",
     "claimable": "tsx scripts/make-claimable.ts",
     "keys": "tsx scripts/keygen.ts",
     "migrate": "tsx scripts/migrate.ts",

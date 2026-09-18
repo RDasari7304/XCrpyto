@@ -39,6 +39,12 @@ export const config = {
     botBearer: process.env.X_BOT_TOKEN ?? '',
     botUserId: process.env.X_BOT_USER_ID ?? '',
     botHandle: (process.env.X_BOT_HANDLE ?? 'XCryptoBot').replace(/^@/, ''),
+    // OAuth 1.0a User Context credentials, used only to post replies as the bot.
+    // (Reads use the App-Only Bearer token above.)
+    consumerKey: process.env.X_API_KEY ?? '',
+    consumerSecret: process.env.X_API_SECRET ?? '',
+    accessToken: process.env.X_ACCESS_TOKEN ?? '',
+    accessSecret: process.env.X_ACCESS_SECRET ?? '',
     get configured(): boolean {
       return Boolean(process.env.X_CLIENT_ID && process.env.X_CLIENT_SECRET);
     },

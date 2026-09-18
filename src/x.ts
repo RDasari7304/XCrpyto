@@ -1,5 +1,6 @@
 import { randomBytes, createHash } from 'node:crypto';
 import { config } from './config.js';
+import { oauthHeader, botOauth1Configured } from './oauth1.js';
 
 const API = 'https://api.x.com/2';
 const AUTHORIZE = 'https://x.com/i/oauth2/authorize';
@@ -135,12 +136,23 @@ export async function lookupHandle(
   }
 }
 
-/** Reply from the bot's own clearly-labelled automated account. */
+/**
+ * Reply from the bot's own automated account.
+ *
+ * Posting is an action taken as the bot account, so it uses OAuth 1.0a User
+ * Context (not the App-Only Bearer token, which can only read). The JSON body
+ * is not part of the OAuth signature base for v2, so we sign the bare URL.
+ */
 export async function reply(inReplyToTweetId: string, text: string): Promise<void> {
-  const res = await fetch(`${API}/tweets`, {
+  if (!botOauth1Configured()) {
+    console.error('reply skipped: X_API_KEY/SECRET and X_ACCESS_TOKEN/SECRET are not set');
+    return;
+  }
+  const url = `${API}/tweets`;
+  const res = await fetch(url, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${config.x.botBearer}`,
+      Authorization: oauthHeader('POST', url),
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ text, reply: { in_reply_to_tweet_id: inReplyToTweetId } }),
