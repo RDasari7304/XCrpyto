@@ -1,0 +1,252 @@
+:root {
+  --paper: #eef1f4;
+  --card: #ffffff;
+  --ink: #1b2430;
+  --ink-soft: #5b6775;
+  --rule: #d3dae1;
+  --action: #2c5fe8;
+  --action-deep: #1e45ac;
+  --held: #b8791f;
+  --alarm: #b4432e;
+
+  --step: 1.5rem;
+  --measure: 34rem;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.55;
+  font-variant-numeric: tabular-nums;
+}
+
+a {
+  color: var(--action);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--action);
+  outline-offset: 2px;
+}
+
+.shell {
+  max-width: var(--measure);
+  margin: 0 auto;
+  padding: calc(var(--step) * 1.5) var(--step) calc(var(--step) * 3);
+}
+
+.masthead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: calc(var(--step) * 1.5);
+}
+
+.wordmark {
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.wordmark a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.masthead-meta {
+  font-size: 0.8125rem;
+  color: var(--ink-soft);
+}
+
+h1 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  margin: 0 0 0.5rem;
+}
+
+h2 {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  margin: calc(var(--step) * 1.5) 0 0.5rem;
+}
+
+p {
+  margin: 0 0 1rem;
+  max-width: 32rem;
+}
+
+.lede {
+  color: var(--ink-soft);
+}
+
+/* The amount is the whole point of the approval screen. */
+.amount {
+  font-size: clamp(2.75rem, 12vw, 4rem);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1;
+  margin: 0;
+}
+
+.amount .unit {
+  font-size: 0.3em;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--ink-soft);
+  margin-left: 0.4em;
+}
+
+.slip {
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: calc(var(--step) * 1.25);
+}
+
+.facts {
+  margin: calc(var(--step) * 1.25) 0 0;
+  padding: 0;
+  border-top: 1px solid var(--rule);
+}
+
+.facts div {
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0.625rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.facts dt {
+  color: var(--ink-soft);
+  font-size: 0.875rem;
+  flex: none;
+}
+
+.facts dd {
+  margin: 0;
+  text-align: right;
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+.addr {
+  font-size: 0.8125rem;
+}
+
+button {
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 2px;
+  border: 1px solid transparent;
+  padding: 0.6875rem 1rem;
+  transition: background-color 120ms ease;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.primary {
+  display: block;
+  width: 100%;
+  margin-top: calc(var(--step) * 1.25);
+  background: var(--action);
+  color: #fff;
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--action-deep);
+}
+
+.quiet {
+  background: transparent;
+  border-color: var(--rule);
+  color: var(--ink);
+}
+
+.quiet:hover:not(:disabled) {
+  background: #e4e9ee;
+}
+
+.row {
+  display: flex;
+  gap: 1rem;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0.875rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.row:first-of-type {
+  border-top: 1px solid var(--rule);
+}
+
+.row-main {
+  min-width: 0;
+}
+
+.row-main strong {
+  font-weight: 500;
+}
+
+.row-sub {
+  display: block;
+  font-size: 0.8125rem;
+  color: var(--ink-soft);
+}
+
+.held {
+  color: var(--held);
+}
+
+.error {
+  color: var(--alarm);
+  border-left: 2px solid var(--alarm);
+  padding-left: 0.75rem;
+  margin: 1rem 0;
+}
+
+.empty {
+  color: var(--ink-soft);
+  font-size: 0.9375rem;
+  padding: 0.875rem 0;
+  border-top: 1px solid var(--rule);
+  margin: 0;
+}
+
+.custody {
+  margin-top: calc(var(--step) * 2.5);
+  padding-top: 0.875rem;
+  border-top: 1px solid var(--rule);
+  font-size: 0.8125rem;
+  color: var(--ink-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
