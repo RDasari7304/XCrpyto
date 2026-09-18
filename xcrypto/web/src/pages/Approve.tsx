@@ -2,13 +2,16 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Connection, Transaction } from '@solana/web3.js';
 import { useWallet, WalletButton, base64ToBytes } from '../wallet';
-import { ApiError, buildIntentTx, confirmIntent, getAccount, getIntent, loginUrl, type IntentView } from '../api';
+import { ApiError, buildIntentTx, confirmIntent, getAccount, getIntent, loginUrl, runtimeRpcUrl, type IntentView } from '../api';
 
-// A single shared RPC connection, replacing useConnection() from the adapter.
-const connection = new Connection(
-  import.meta.env.VITE_RPC_URL ?? 'http://127.0.0.1:8899',
-  'confirmed',
-);
+// The RPC endpoint comes from the server at runtime (see getAccount), with the
+// build-time var as a fallback, so it never gets stuck on a stale baked-in URL.
+let _conn: Connection | null = null;
+function rpc(): Connection {
+  const url = runtimeRpcUrl ?? import.meta.env.VITE_RPC_URL ?? 'https://api.devnet.solana.com';
+  if (!_conn || _conn.rpcEndpoint !== url) _conn = new Connection(url, 'confirmed');
+  return _conn;
+}
 
 function short(addr: string): string {
   return `${addr.slice(0, 6)}…${addr.slice(-6)}`;
@@ -56,8 +59,8 @@ export default function Approve() {
       const { base64 } = await buildIntentTx(id);
       const tx = Transaction.from(base64ToBytes(base64));
       const signed = await signTransaction(tx);
-      const sig = await connection.sendRawTransaction(signed.serialize());
-      await connection.confirmTransaction(sig, 'confirmed');
+      const sig = await rpc().sendRawTransaction(signed.serialize());
+      await rpc().confirmTransaction(sig, 'confirmed');
       await confirmIntent(id, sig);
       setSignature(sig);
       await load();

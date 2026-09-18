@@ -10,6 +10,13 @@ COPY web/package*.json ./web/
 RUN cd web && npm install
 
 COPY . .
+
+# Vite bakes VITE_* vars in at build time, so they must be present here, not
+# just at runtime. Render passes them as build args when set in the service env.
+ARG VITE_RPC_URL=https://api.devnet.solana.com
+ARG VITE_API_URL=
+ENV VITE_RPC_URL=$VITE_RPC_URL
+ENV VITE_API_URL=$VITE_API_URL
 RUN cd web && npm run build
 
 FROM node:20-slim AS runtime
