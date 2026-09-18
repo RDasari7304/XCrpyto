@@ -163,6 +163,7 @@ app.get('/api/me', requireAuth, async (req: AuthedRequest, res) => {
     wallet: u.wallet,
     csrfToken: req.csrfSecret,
     cluster: config.solana.cluster,
+    rpcUrl: config.solana.rpcUrl,
     botHandle: config.x.botHandle,
     escrowEnabled: config.solana.escrowEnabled,
     xSignInAvailable: config.x.configured,

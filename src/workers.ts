@@ -158,5 +158,9 @@ async function loop(name: string, fn: () => Promise<unknown>, intervalMs: number
 }
 
 console.log('workers starting');
-void loop('mentions', pollMentions, 20_000);
+// Each poll is a billable X API read on Pay-Per-Use, so the interval directly
+// sets your idle cost. Default 60s (~43k reads/month); raise MENTION_POLL_SECONDS
+// on Render to cut spend further. A minute or two of reply delay is fine.
+const pollSeconds = Math.max(15, Number(process.env.MENTION_POLL_SECONDS ?? 60));
+void loop('mentions', pollMentions, pollSeconds * 1000);
 void loop('housekeeping', expireIntents, 60_000);

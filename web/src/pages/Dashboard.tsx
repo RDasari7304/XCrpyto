@@ -10,14 +10,18 @@ import {
   logout,
   walletChallenge,
   walletVerify,
+  runtimeRpcUrl,
   type Account,
 } from '../api';
 
-// A single shared RPC connection, replacing useConnection() from the adapter.
-const connection = new Connection(
-  import.meta.env.VITE_RPC_URL ?? 'http://127.0.0.1:8899',
-  'confirmed',
-);
+// The RPC endpoint comes from the server at runtime (see getAccount), with the
+// build-time var as a fallback, so it never gets stuck on a stale baked-in URL.
+let _conn: Connection | null = null;
+function rpc(): Connection {
+  const url = runtimeRpcUrl ?? import.meta.env.VITE_RPC_URL ?? 'https://api.devnet.solana.com';
+  if (!_conn || _conn.rpcEndpoint !== url) _conn = new Connection(url, 'confirmed');
+  return _conn;
+}
 
 function short(addr: string): string {
   return `${addr.slice(0, 4)}…${addr.slice(-4)}`;
@@ -72,8 +76,8 @@ export default function Dashboard() {
       // Arrives already signed by the attestor; our signature completes it.
       const tx = Transaction.from(base64ToBytes(base64));
       const signed = await signTransaction(tx);
-      const signature = await connection.sendRawTransaction(signed.serialize());
-      await connection.confirmTransaction(signature, 'confirmed');
+      const signature = await rpc().sendRawTransaction(signed.serialize());
+      await rpc().confirmTransaction(signature, 'confirmed');
       await confirmClaim(pda, signature);
       await refresh();
     } catch (err) {

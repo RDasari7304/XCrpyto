@@ -63,6 +63,26 @@ async function get<T>(path: string, token: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+/**
+ * GET signed with OAuth 1.0a User Context. Required for endpoints that act as
+ * the bot user rather than as the app — the mentions timeline is one of these,
+ * and it rejects App-Only Bearer tokens with 401. Query params must be included
+ * in the signature base, so they are split out and signed, then reattached.
+ */
+async function getUserContext<T>(pathWithQuery: string): Promise<T> {
+  const [path, query = ''] = pathWithQuery.split('?');
+  const url = `${API}${path}`;
+  const queryParams: Record<string, string> = {};
+  for (const [k, v] of new URLSearchParams(query)) queryParams[k] = v;
+
+  const res = await fetch(`${url}${query ? '?' + query : ''}`, {
+    headers: { Authorization: oauthHeader('GET', url, queryParams) },
+  });
+  if (res.status === 429) throw new RateLimited(Number(res.headers.get('x-rate-limit-reset') ?? 0));
+  if (!res.ok) throw new Error(`X GET ${path} -> ${res.status} ${await res.text()}`);
+  return (await res.json()) as T;
+}
+
 export async function me(token: string): Promise<{ id: string; username: string }> {
   const json = await get<{ data: { id: string; username: string } }>('/users/me', token);
   return json.data;
@@ -88,7 +108,7 @@ export async function fetchMentions(
   });
   if (sinceId) params.set('since_id', sinceId);
 
-  const json = await get<{
+  const json = await getUserContext<{
     data?: Array<{
       id: string;
       text: string;
@@ -100,7 +120,7 @@ export async function fetchMentions(
       tweets?: Array<{ id: string; author_id: string }>;
     };
     meta?: { newest_id?: string };
-  }>(`/users/${config.x.botUserId}/mentions?${params}`, config.x.botBearer);
+  }>(`/users/${config.x.botUserId}/mentions?${params}`);
 
   const users = new Map((json.includes?.users ?? []).map((u) => [u.id, u.username]));
   const tweets = new Map((json.includes?.tweets ?? []).map((t) => [t.id, t.author_id]));
@@ -126,9 +146,8 @@ export async function lookupHandle(
 ): Promise<{ id: string; username: string } | null> {
   if (!/^\w{1,15}$/.test(handle)) return null;
   try {
-    const json = await get<{ data?: { id: string; username: string } }>(
+    const json = await getUserContext<{ data?: { id: string; username: string } }>(
       `/users/by/username/${handle}?user.fields=username`,
-      config.x.botBearer,
     );
     return json.data ?? null;
   } catch {

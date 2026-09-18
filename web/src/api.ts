@@ -34,6 +34,7 @@ export interface Account {
   wallet: string | null;
   csrfToken: string;
   cluster: string;
+  rpcUrl: string;
   botHandle: string;
   escrowEnabled: boolean;
   xSignInAvailable: boolean;
@@ -59,9 +60,12 @@ export interface Account {
   }>;
 }
 
+export let runtimeRpcUrl: string | null = null;
+
 export async function getAccount(): Promise<Account> {
   const account = await request<Account>('/api/me');
   csrfToken = account.csrfToken;
+  runtimeRpcUrl = account.rpcUrl;
   return account;
 }
 
