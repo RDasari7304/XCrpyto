@@ -4,10 +4,10 @@ FROM node:20-slim AS build
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci
+RUN npm install
 
 COPY web/package*.json ./web/
-RUN cd web && npm ci
+RUN cd web && npm install
 
 COPY . .
 RUN cd web && npm run build
