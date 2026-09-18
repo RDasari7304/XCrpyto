@@ -114,7 +114,7 @@ async function handleMention(m: Mention): Promise<void> {
   const to = recipient.handle ? `@${recipient.handle}` : 'them';
   await reply(
     m.id,
-    `Ready to send ${lamportsToSol(cmd.lamports)} SOL to ${to}. Review and sign it in your wallet: ${config.webOrigin}/approve/${intent.id} (expires in ${config.limits.intentTtlMinutes} min)`,
+    `Confirm your transaction 👇\n\n${lamportsToSol(cmd.lamports)} SOL to ${to} — sign it in your own wallet. Expires in ${config.limits.intentTtlMinutes} min.\n\n${config.webOrigin}/approve/${intent.id}`,
   );
 }
 

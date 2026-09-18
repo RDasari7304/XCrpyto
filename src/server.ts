@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import express, { type Response } from 'express';
@@ -387,8 +387,26 @@ if (config.serveWeb) {
   if (!existsSync(webDist)) {
     throw new Error(`SERVE_WEB=true but ${webDist} does not exist. Run: cd web && npm run build`);
   }
-  // Hashed assets are immutable; index.html must never be cached or users get
-  // a stale bundle pointing at deleted asset files after a deploy.
+
+  // Open Graph / Twitter card tags. X's crawler scrapes the page when a link is
+  // tweeted and renders a preview from these. The approval pages are a
+  // client-rendered SPA, so we inject the tags server-side into the HTML shell
+  // before React loads — otherwise the crawler sees an empty page and shows no
+  // card. Read the shell once and keep a copy with the card tags in <head>.
+  const indexHtml = readFileSync(join(webDist, 'index.html'), 'utf8');
+  const cardTags = [
+    `<meta property="og:type" content="website" />`,
+    `<meta property="og:site_name" content="XCrypto" />`,
+    `<meta property="og:title" content="Confirm your transaction" />`,
+    `<meta property="og:description" content="Review and sign it in your own wallet. XCrypto never holds your funds." />`,
+    `<meta property="og:image" content="${config.baseUrl}/card.png" />`,
+    `<meta name="twitter:card" content="summary_large_image" />`,
+    `<meta name="twitter:title" content="Confirm your transaction" />`,
+    `<meta name="twitter:description" content="Review and sign it in your own wallet." />`,
+    `<meta name="twitter:image" content="${config.baseUrl}/card.png" />`,
+  ].join('\n    ');
+  const indexWithCard = indexHtml.replace('</head>', `    ${cardTags}\n  </head>`);
+
   app.use(
     express.static(webDist, {
       index: false,
@@ -401,7 +419,7 @@ if (config.serveWeb) {
   );
   app.get(/^\/(?!api|auth|health).*/, (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
-    res.sendFile(join(webDist, 'index.html'));
+    res.type('html').send(indexWithCard);
   });
 }
 
