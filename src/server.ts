@@ -378,14 +378,20 @@ app.post('/api/intents/:id/transaction', requireAuth, requireCsrf, limiter('buil
 
 app.post('/api/intents/:id/confirm', requireAuth, requireCsrf, limiter('confirm', 60, 600), async (req: AuthedRequest, res) => {
   const { signature } = req.body ?? {};
-  if (typeof signature !== 'string' || !/^[1-9A-HJ-NP-Za-km-z]{60,100}$/.test(signature)) {
+  const isSolSig = typeof signature === 'string' && /^[1-9A-HJ-NP-Za-km-z]{60,100}$/.test(signature);
+  const isEvmHash = typeof signature === 'string' && /^0x[a-fA-F0-9]{64}$/.test(signature);
+  if (!isSolSig && !isEvmHash) {
     return fail(res, 400, 'Invalid transaction signature');
   }
   const intent = await getIntentForSender(req.params.id, req.user!.id);
   if (!intent) return fail(res, 404, 'Tip request not found');
-  if (!req.user!.wallet) return fail(res, 400, 'Connect a wallet first');
+  // EVM (robinhood) confirmation verifies against the chain and doesn't use the
+  // Solana wallet; only require a Solana wallet for Solana intents.
+  if (intent.chain !== 'robinhood' && !req.user!.wallet) {
+    return fail(res, 400, 'Connect a wallet first');
+  }
   try {
-    await confirmIntent(intent, signature, req.user!.wallet);
+    await confirmIntent(intent, signature, req.user!.wallet ?? '');
     res.json({ status: 'confirmed', signature });
   } catch (err) {
     if (err instanceof IntentError) return fail(res, 409, err.message);

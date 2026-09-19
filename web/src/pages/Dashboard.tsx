@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import bs58 from 'bs58';
 import { useWallet, WalletButton } from '../wallet';
 import { Coin } from '../Coin';
-import { useEvmVerify, ROBINHOOD_CHAIN, evmSend, evmConfirm, evmErc20Balance, currentEvmAddress, evmConnect, evmPersonalSign } from '../evm';
+import { evmConnect, evmPersonalSign } from '../evm';
 import {
   getAccount,
   logout,
@@ -24,11 +24,6 @@ export default function Dashboard() {
   const [account, setAccount] = useState<Account | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const evm = useEvmVerify();
-  const [aiTo, setAiTo] = useState('');
-  const [aiAmt, setAiAmt] = useState('');
-  const [aiStatus, setAiStatus] = useState<string | null>(null);
-  const [aiBusy, setAiBusy] = useState(false);
   const [evmLinkBusy, setEvmLinkBusy] = useState(false);
   const [evmLinkMsg, setEvmLinkMsg] = useState<string | null>(null);
 
@@ -86,48 +81,6 @@ export default function Dashboard() {
     await logout();
     await disconnect().catch(() => {});
     navigate('/', { replace: true });
-  };
-
-  const AI_CONTRACT = '0x2e8c31162b855a2ffa90f6f8634643ad6f111e18';
-  const AI_DECIMALS = 18;
-
-  const sendAiTest = async () => {
-    setAiStatus(null);
-    if (!/^0x[a-fA-F0-9]{40}$/.test(aiTo.trim())) {
-      setAiStatus('Enter a valid 0x… recipient address');
-      return;
-    }
-    if (!/^\d+(\.\d+)?$/.test(aiAmt.trim()) || Number(aiAmt) <= 0) {
-      setAiStatus('Enter a positive amount');
-      return;
-    }
-    setAiBusy(true);
-    try {
-      const from = await currentEvmAddress();
-      if (!from) throw new Error('Connect your EVM wallet first (run Verify above)');
-
-      // Decimal string -> base units (18 decimals), no float.
-      const [wholeStr, fracStr = ''] = aiAmt.trim().split('.');
-      const base = 10n ** BigInt(AI_DECIMALS);
-      const amount =
-        BigInt(wholeStr || '0') * base + BigInt((fracStr + '0'.repeat(AI_DECIMALS)).slice(0, AI_DECIMALS));
-
-      const balance = await evmErc20Balance(AI_CONTRACT, from);
-      if (balance < amount) {
-        throw new Error(`Not enough AI. You hold ${balance} base units, need ${amount}.`);
-      }
-
-      setAiStatus('Waiting for your signature…');
-      // Same evmSend the mention→approve flow will call.
-      const hash = await evmSend({ from, to: aiTo.trim(), amount, contract: AI_CONTRACT });
-      setAiStatus(`Submitted ${hash.slice(0, 10)}… — confirming…`);
-      await evmConfirm(hash);
-      setAiStatus(`✓ Confirmed. ${ROBINHOOD_CHAIN.explorer}/tx/${hash}`);
-    } catch (err: any) {
-      setAiStatus(err?.message ?? 'Send failed');
-    } finally {
-      setAiBusy(false);
-    }
   };
 
   if (!account) return <p className="lede">Loading…</p>;
@@ -265,77 +218,6 @@ export default function Dashboard() {
             )}
           </div>
         </div>
-      </div>
-
-      <h2>Robinhood Chain (verification)</h2>
-      <div className="card">
-        <p className="muted" style={{ marginTop: 0 }}>
-          Read-only check — connects Phantom to {ROBINHOOD_CHAIN.name} (chain{' '}
-          {ROBINHOOD_CHAIN.chainIdDec}) and reads the AI token's on-chain decimals and your
-          native gas balance. Moves no funds.
-        </p>
-        <button className="btn btn-ghost" onClick={() => void evm.run()} disabled={evm.busy}>
-          {evm.busy ? 'Checking…' : 'Verify Robinhood Chain'}
-        </button>
-        {evm.error && <p className="error">{evm.error}</p>}
-        {evm.result && (
-          <dl className="facts">
-            <div>
-              <dt>EVM address</dt>
-              <dd className="mono">{evm.result.address}</dd>
-            </div>
-            <div>
-              <dt>Chain id seen</dt>
-              <dd>
-                {evm.result.chainIdSeen}{' '}
-                {evm.result.chainIdSeen === ROBINHOOD_CHAIN.chainIdDec ? '✓' : '✗ (wrong chain!)'}
-              </dd>
-            </div>
-            <div>
-              <dt>AI decimals on chain</dt>
-              <dd>
-                {evm.result.aiDecimalsOnChain}{' '}
-                {evm.result.aiDecimalsOnChain === 18 ? '✓ matches 18' : '✗ NOT 18 — do not send yet'}
-              </dd>
-            </div>
-            <div>
-              <dt>Native gas balance (wei)</dt>
-              <dd className="mono">{evm.result.nativeBalanceWei}</dd>
-            </div>
-          </dl>
-        )}
-      </div>
-
-      <h2>Send AI (test)</h2>
-      <div className="card">
-        <p className="muted" style={{ marginTop: 0 }}>
-          Sends real AI on Robinhood Chain to any address, using the exact transfer code the
-          mention flow will use. Run “Verify” above first so your EVM wallet is connected. Needs a
-          little ETH in your EVM wallet for gas.
-        </p>
-        <input
-          className="input"
-          placeholder="Recipient 0x… address"
-          value={aiTo}
-          onChange={(e) => setAiTo(e.target.value)}
-          spellCheck={false}
-        />
-        <input
-          className="input"
-          placeholder="Amount of AI"
-          value={aiAmt}
-          onChange={(e) => setAiAmt(e.target.value)}
-          inputMode="decimal"
-          style={{ marginTop: '0.5rem' }}
-        />
-        <button className="btn btn-primary" onClick={() => void sendAiTest()} disabled={aiBusy}>
-          {aiBusy ? 'Working…' : 'Send AI'}
-        </button>
-        {aiStatus && (
-          <p className={aiStatus.startsWith('✓') ? 'muted' : aiStatus.startsWith('Waiting') || aiStatus.startsWith('Submitted') ? 'muted' : 'error'} style={{ marginTop: '0.85rem', overflowWrap: 'anywhere' }}>
-            {aiStatus}
-          </p>
-        )}
       </div>
 
       <div className="foot">
