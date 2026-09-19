@@ -45,6 +45,13 @@ export const TOKENS: TokenInfo[] = [
     decimals: 6, // confirmed via solscan
     aliases: ['cate', '$cate'],
   },
+  {
+    symbol: 'ZCAT',
+    name: 'ZCat',
+    mint: new PublicKey('HcRLc9VDgjLeK154xDawfb1dmVJ98DoSqcwTHGqiDeJR'),
+    decimals: 9, // per user; verify on solscan
+    aliases: ['zcat', '$zcat'],
+  },
 ];
 
 const BY_ALIAS = new Map<string, TokenInfo>();
