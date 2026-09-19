@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import bs58 from 'bs58';
 import { useWallet, WalletButton } from '../wallet';
 import { Coin } from '../Coin';
+import { useEvmVerify, ROBINHOOD_CHAIN } from '../evm';
 import {
   getAccount,
   logout,
@@ -22,6 +23,7 @@ export default function Dashboard() {
   const [account, setAccount] = useState<Account | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const evm = useEvmVerify();
 
   const refresh = useCallback(async () => {
     try {
@@ -172,6 +174,45 @@ export default function Dashboard() {
             )}
           </div>
         </div>
+      </div>
+
+      <h2>Robinhood Chain (verification)</h2>
+      <div className="card">
+        <p className="muted" style={{ marginTop: 0 }}>
+          Read-only check — connects Phantom to {ROBINHOOD_CHAIN.name} (chain{' '}
+          {ROBINHOOD_CHAIN.chainIdDec}) and reads the AI token's on-chain decimals and your
+          native gas balance. Moves no funds.
+        </p>
+        <button className="btn btn-ghost" onClick={() => void evm.run()} disabled={evm.busy}>
+          {evm.busy ? 'Checking…' : 'Verify Robinhood Chain'}
+        </button>
+        {evm.error && <p className="error">{evm.error}</p>}
+        {evm.result && (
+          <dl className="facts">
+            <div>
+              <dt>EVM address</dt>
+              <dd className="mono">{evm.result.address}</dd>
+            </div>
+            <div>
+              <dt>Chain id seen</dt>
+              <dd>
+                {evm.result.chainIdSeen}{' '}
+                {evm.result.chainIdSeen === ROBINHOOD_CHAIN.chainIdDec ? '✓' : '✗ (wrong chain!)'}
+              </dd>
+            </div>
+            <div>
+              <dt>AI decimals on chain</dt>
+              <dd>
+                {evm.result.aiDecimalsOnChain}{' '}
+                {evm.result.aiDecimalsOnChain === 18 ? '✓ matches 18' : '✗ NOT 18 — do not send yet'}
+              </dd>
+            </div>
+            <div>
+              <dt>Native gas balance (wei)</dt>
+              <dd className="mono">{evm.result.nativeBalanceWei}</dd>
+            </div>
+          </dl>
+        )}
       </div>
 
       <div className="foot">
