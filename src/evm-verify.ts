@@ -10,6 +10,21 @@
 const TRANSFER_TOPIC =
   '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
 
+/**
+ * Public RPCs (polygon-rpc.com, HyperEVM, etc.) often lag between a receipt
+ * being confirmed and the tx being queryable — so a single check right after
+ * the client confirms can see null and wrongly report "did not land". Retry a
+ * few times with backoff before giving up.
+ */
+async function withRetry<T>(fn: () => Promise<T | null | false>, tries = 6, delayMs = 2500): Promise<T | null | false> {
+  for (let i = 0; i < tries; i++) {
+    const out = await fn();
+    if (out) return out;
+    if (i < tries - 1) await new Promise((r) => setTimeout(r, delayMs));
+  }
+  return null;
+}
+
 async function rpcCall<T>(rpcUrl: string, method: string, params: unknown[]): Promise<T> {
   const res = await fetch(rpcUrl, {
     method: 'POST',
@@ -50,31 +65,32 @@ export async function verifyEvmErc20Transfer(opts: {
   amount: bigint;
 }): Promise<boolean> {
   if (!/^0x[a-fA-F0-9]{64}$/.test(opts.txHash)) return false;
-  let receipt: EvmReceipt | null;
-  try {
-    receipt = await rpcCall<EvmReceipt | null>(opts.rpcUrl, 'eth_getTransactionReceipt', [opts.txHash]);
-  } catch {
-    return false;
-  }
-  if (!receipt || !receipt.blockNumber || receipt.status !== '0x1') return false;
-
   const contract = opts.contract.toLowerCase();
   const recipient = opts.recipient.toLowerCase();
-
-  for (const log of receipt.logs) {
-    if (log.address.toLowerCase() !== contract) continue;
-    if (log.topics[0]?.toLowerCase() !== TRANSFER_TOPIC) continue;
-    const to = topicToAddress(log.topics[2] ?? '');
-    if (to !== recipient) continue;
-    let value: bigint;
+  const result = await withRetry(async () => {
+    let receipt: EvmReceipt | null;
     try {
-      value = BigInt(log.data);
+      receipt = await rpcCall<EvmReceipt | null>(opts.rpcUrl, 'eth_getTransactionReceipt', [opts.txHash]);
     } catch {
-      continue;
+      return false;
     }
-    if (value >= opts.amount) return true;
-  }
-  return false;
+    if (!receipt || !receipt.blockNumber || receipt.status !== '0x1') return false;
+    for (const log of receipt.logs) {
+      if (log.address.toLowerCase() !== contract) continue;
+      if (log.topics[0]?.toLowerCase() !== TRANSFER_TOPIC) continue;
+      const to = topicToAddress(log.topics[2] ?? '');
+      if (to !== recipient) continue;
+      let value: bigint;
+      try {
+        value = BigInt(log.data);
+      } catch {
+        continue;
+      }
+      if (value >= opts.amount) return true;
+    }
+    return false;
+  });
+  return result === true;
 }
 
 interface EvmTx {
@@ -93,14 +109,17 @@ export async function verifyEvmNativeTransfer(opts: {
   amount: bigint;
 }): Promise<boolean> {
   if (!/^0x[a-fA-F0-9]{64}$/.test(opts.txHash)) return false;
-  try {
-    const receipt = await rpcCall<EvmReceipt | null>(opts.rpcUrl, 'eth_getTransactionReceipt', [opts.txHash]);
-    if (!receipt || !receipt.blockNumber || receipt.status !== '0x1') return false;
-    const tx = await rpcCall<EvmTx | null>(opts.rpcUrl, 'eth_getTransactionByHash', [opts.txHash]);
-    if (!tx || !tx.to) return false;
-    if (tx.to.toLowerCase() !== opts.recipient.toLowerCase()) return false;
-    return BigInt(tx.value) >= opts.amount;
-  } catch {
-    return false;
-  }
+  const result = await withRetry(async () => {
+    try {
+      const receipt = await rpcCall<EvmReceipt | null>(opts.rpcUrl, 'eth_getTransactionReceipt', [opts.txHash]);
+      if (!receipt || !receipt.blockNumber || receipt.status !== '0x1') return false;
+      const tx = await rpcCall<EvmTx | null>(opts.rpcUrl, 'eth_getTransactionByHash', [opts.txHash]);
+      if (!tx || !tx.to) return false;
+      if (tx.to.toLowerCase() !== opts.recipient.toLowerCase()) return false;
+      return BigInt(tx.value) >= opts.amount ? true : false;
+    } catch {
+      return false;
+    }
+  });
+  return result === true;
 }

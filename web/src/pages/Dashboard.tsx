@@ -5,6 +5,7 @@ import bs58 from 'bs58';
 import { useWallet, WalletButton } from '../wallet';
 import { Coin } from '../Coin';
 import { evmConnect, evmPersonalSign } from '../evm';
+import { useBtcProbe } from '../btc';
 import {
   getAccount,
   logout,
@@ -26,6 +27,7 @@ export default function Dashboard() {
   const [busy, setBusy] = useState(false);
   const [evmLinkBusy, setEvmLinkBusy] = useState(false);
   const [evmLinkMsg, setEvmLinkMsg] = useState<string | null>(null);
+  const btc = useBtcProbe();
 
   const refresh = useCallback(async () => {
     try {
@@ -218,6 +220,36 @@ export default function Dashboard() {
             )}
           </div>
         </div>
+      </div>
+
+      <h2>Bitcoin (probe — read only)</h2>
+      <div className="card">
+        <p className="muted" style={{ marginTop: 0 }}>
+          Connects Phantom's Bitcoin wallet and shows what it returns. Moves no funds — this is the
+          first step of BTC support, to confirm the wallet before any sending is built.
+        </p>
+        <button className="btn btn-ghost" onClick={() => void btc.run()} disabled={btc.busy}>
+          {btc.busy ? 'Connecting…' : 'Probe Bitcoin wallet'}
+        </button>
+        {btc.error && <p className="error">{btc.error}</p>}
+        {btc.result && (
+          <dl className="facts">
+            <div>
+              <dt>Payment address</dt>
+              <dd className="mono">{btc.result.paymentAddress ?? '—'}</dd>
+            </div>
+            <div>
+              <dt>Ordinals address</dt>
+              <dd className="mono">{btc.result.ordinalsAddress ?? '—'}</dd>
+            </div>
+            <div>
+              <dt>Raw</dt>
+              <dd className="mono" style={{ fontSize: '0.7rem' }}>
+                {JSON.stringify(btc.result.raw)}
+              </dd>
+            </div>
+          </dl>
+        )}
       </div>
 
       <div className="foot">
