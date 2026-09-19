@@ -12,10 +12,13 @@ function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="shell">
       <header className="masthead">
-        <p className="wordmark">
-          <Link to="/">XCrypto</Link>
-        </p>
-        <span className="masthead-meta">You sign every transfer</span>
+        <span className="brand">
+          <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            <span className="brand-dot">X</span>
+            XCrypto
+          </Link>
+        </span>
+        <span className="tag">You sign every transfer</span>
       </header>
       {children}
     </div>

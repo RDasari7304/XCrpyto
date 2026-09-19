@@ -2,11 +2,8 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import { PublicKey, Transaction } from '@solana/web3.js';
 
 /**
- * Minimal replacement for @solana/wallet-adapter-*.
- *
- * Phantom and Solflare both inject a provider on `window` with the same small
- * API surface, so the five adapter packages bought us nothing but install
- * problems. This talks to them directly.
+ * Minimal wallet layer talking to Phantom / Solflare directly (they inject a
+ * provider on `window`), avoiding the five @solana/wallet-adapter packages.
  */
 
 interface Provider {
@@ -15,7 +12,8 @@ interface Provider {
   disconnect(): Promise<void>;
   signMessage(message: Uint8Array, encoding?: string): Promise<{ signature: Uint8Array }>;
   signTransaction(tx: Transaction): Promise<Transaction>;
-  on?(event: string, handler: () => void): void;
+  on?(event: string, handler: (arg?: unknown) => void): void;
+  removeAllListeners?(event: string): void;
 }
 
 type WalletName = 'Phantom' | 'Solflare';
@@ -53,24 +51,43 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     let tries = 0;
     const timer = setInterval(() => {
       const found = installedWallets();
-      setAvailable(found);
+      if (found.length) setAvailable(found);
       if (found.length > 0 || ++tries > 20) clearInterval(timer);
     }, 100);
     return () => clearInterval(timer);
   }, []);
 
-  // Reconnect silently if the user already trusted this site.
+  // Reconnect silently if the user already trusted this site. Also react to the
+  // wallet's own account-change events so our state never drifts from the
+  // extension's (a stale mismatch was causing spurious "different account"
+  // prompts).
   useEffect(() => {
     if (available.length === 0 || publicKey) return;
     const first = available[0];
     const provider = providerFor(first);
+    if (!provider) return;
+
+    let cancelled = false;
     provider
-      ?.connect({ onlyIfTrusted: true })
+      .connect({ onlyIfTrusted: true })
       .then((res) => {
+        if (cancelled) return;
         setName(first);
         setPublicKey(new PublicKey(res.publicKey.toBase58()));
       })
       .catch(() => {});
+
+    provider.on?.('accountChanged', (pk: unknown) => {
+      if (pk && typeof (pk as any).toBase58 === 'function') {
+        setPublicKey(new PublicKey((pk as any).toBase58()));
+      } else {
+        setPublicKey(null);
+        setName(null);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [available, publicKey]);
 
   const connect = useCallback(async (which: WalletName) => {
@@ -85,13 +102,24 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         setPublicKey(null);
         setName(null);
       });
+      provider.on?.('accountChanged', (pk: unknown) => {
+        if (pk && typeof (pk as any).toBase58 === 'function') {
+          setPublicKey(new PublicKey((pk as any).toBase58()));
+        } else {
+          setPublicKey(null);
+          setName(null);
+        }
+      });
     } finally {
       setConnecting(false);
     }
   }, []);
 
   const disconnect = useCallback(async () => {
-    if (name) await providerFor(name)?.disconnect().catch(() => {});
+    if (name) {
+      const p = providerFor(name);
+      await p?.disconnect().catch(() => {});
+    }
     setPublicKey(null);
     setName(null);
   }, [name]);
@@ -133,7 +161,7 @@ export function WalletButton() {
   if (publicKey) {
     const addr = publicKey.toBase58();
     return (
-      <button className="quiet" onClick={() => void disconnect()}>
+      <button className="btn btn-ghost" onClick={() => void disconnect()}>
         {addr.slice(0, 4)}…{addr.slice(-4)} · Disconnect
       </button>
     );
@@ -141,7 +169,7 @@ export function WalletButton() {
 
   if (available.length === 0) {
     return (
-      <p className="lede" style={{ margin: 0 }}>
+      <p className="muted" style={{ margin: 0 }}>
         No Solana wallet detected. Install{' '}
         <a href="https://phantom.app/download" target="_blank" rel="noreferrer noopener">
           Phantom
@@ -158,7 +186,7 @@ export function WalletButton() {
   return (
     <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
       {available.map((w) => (
-        <button key={w} className="quiet" disabled={connecting} onClick={() => void connect(w)}>
+        <button key={w} className="btn btn-primary" disabled={connecting} onClick={() => void connect(w)}>
           {connecting ? 'Connecting…' : `Connect ${w}`}
         </button>
       ))}

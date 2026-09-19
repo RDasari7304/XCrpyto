@@ -4,8 +4,6 @@ import { Connection, Transaction } from '@solana/web3.js';
 import { useWallet, WalletButton, base64ToBytes } from '../wallet';
 import { ApiError, buildIntentTx, confirmIntent, getAccount, getIntent, loginUrl, runtimeRpcUrl, type IntentView } from '../api';
 
-// The RPC endpoint comes from the server at runtime (see getAccount), with the
-// build-time var as a fallback, so it never gets stuck on a stale baked-in URL.
 let _conn: Connection | null = null;
 function rpc(): Connection {
   const url = runtimeRpcUrl ?? import.meta.env.VITE_RPC_URL ?? 'https://api.devnet.solana.com';
@@ -28,15 +26,11 @@ export default function Approve() {
   const load = useCallback(async () => {
     if (!id) return;
     try {
-      // Fetch the account first: this is what populates the CSRF token that
-      // the approve/confirm POSTs require. The dashboard does this implicitly;
-      // this page is often opened directly from an X link, so it must too.
-      await getAccount();
+      await getAccount(); // populates CSRF token
       const view = await getIntent(id);
       setIntent(view);
       if (view.signature) setSignature(view.signature);
     } catch (err) {
-      // Links arrive from X, so the visitor frequently has no session yet.
       if (err instanceof ApiError && err.status === 401) {
         window.location.href = loginUrl(`/approve/${id}`);
         return;
@@ -54,8 +48,6 @@ export default function Approve() {
     setError(null);
     setSending(true);
     try {
-      // The server builds the transaction from its own record of the tip, so
-      // nothing on this page can change who gets paid.
       const { base64 } = await buildIntentTx(id);
       const tx = Transaction.from(base64ToBytes(base64));
       const signed = await signTransaction(tx);
@@ -74,9 +66,11 @@ export default function Approve() {
   if (error && !intent) {
     return (
       <>
-        <h1>Can&apos;t open this request</h1>
+        <h1>Can't open this request</h1>
         <p className="error">{error}</p>
-        <Link to="/dashboard">Back to your account</Link>
+        <Link to="/dashboard" className="btn btn-ghost" style={{ display: 'inline-block' }}>
+          Back to your account
+        </Link>
       </>
     );
   }
@@ -90,7 +84,7 @@ export default function Approve() {
     <>
       <h1>{done ? 'Sent' : 'Confirm this transfer'}</h1>
 
-      <div className="slip">
+      <div className="card">
         <p className="amount">
           {intent.amount}
           <span className="unit">{intent.token}</span>
@@ -101,32 +95,34 @@ export default function Approve() {
             <dt>To</dt>
             <dd>{recipient}</dd>
           </div>
-          {intent.route === 'direct' && intent.recipientWallet && (
+          {intent.recipientWallet && (
             <div>
               <dt>Their wallet</dt>
-              <dd className="addr">{short(intent.recipientWallet)}</dd>
-            </div>
-          )}
-          {intent.route === 'escrow' && (
-            <div>
-              <dt>Held in</dt>
-              <dd>An escrow only they can open</dd>
+              <dd className="mono">{short(intent.recipientWallet)}</dd>
             </div>
           )}
           <div>
             <dt>From</dt>
-            <dd className="addr">{publicKey ? short(publicKey.toBase58()) : 'Connect a wallet'}</dd>
+            <dd className="mono">{publicKey ? short(publicKey.toBase58()) : 'Connect a wallet'}</dd>
           </div>
           {!done && (
             <div>
-              <dt>Request expires</dt>
+              <dt>Expires</dt>
               <dd>{new Date(intent.expiresAt).toLocaleTimeString()}</dd>
             </div>
           )}
           {signature && (
             <div>
               <dt>Signature</dt>
-              <dd className="addr">{short(signature)}</dd>
+              <dd className="mono">
+                <a
+                  href={`https://solscan.io/tx/${signature}`}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                >
+                  {short(signature)}
+                </a>
+              </dd>
             </div>
           )}
         </dl>
@@ -135,15 +131,17 @@ export default function Approve() {
 
         {done ? (
           <Link to="/dashboard">
-            <button className="primary">Back to your account</button>
+            <button className="btn btn-primary">Back to your account</button>
           </Link>
         ) : dead ? (
           <>
-            <p style={{ marginTop: '1.25rem' }}>
+            <p className="muted" style={{ marginTop: '1.25rem' }}>
               This request is {intent.status}. Post the reply again to create a new one.
             </p>
             <Link to="/dashboard">
-              <button className="quiet">Back to your account</button>
+              <button className="btn btn-ghost" style={{ width: '100%', marginTop: '0.5rem' }}>
+                Back to your account
+              </button>
             </Link>
           </>
         ) : !publicKey ? (
@@ -151,18 +149,11 @@ export default function Approve() {
             <WalletButton />
           </div>
         ) : (
-          <button className="primary" onClick={send} disabled={sending}>
+          <button className="btn btn-primary" onClick={send} disabled={sending}>
             {sending ? 'Waiting for your wallet…' : `Send ${intent.amount} ${intent.token}`}
           </button>
         )}
       </div>
-
-      {intent.route === 'escrow' && !done && (
-        <p className="custody">
-          {recipient} hasn&apos;t connected a wallet, so this goes into an on-chain escrow. Only
-          they can claim it, and you can take it back after 30 days if they don&apos;t.
-        </p>
-      )}
     </>
   );
 }

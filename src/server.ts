@@ -251,13 +251,22 @@ app.post('/api/wallet/verify', requireAuth, requireCsrf, limiter('verify', 10, 6
   }
   if (!valid) return fail(res, 400, 'Signature did not verify');
 
-  // One wallet, one X account: otherwise two accounts could fight over the
-  // same address and misroute tips.
-  const { rows: taken } = await db.query(
-    `SELECT 1 FROM users WHERE wallet = $1 AND id <> $2`,
-    [wallet, req.user!.id],
+  // One wallet, one X account. Re-verifying a wallet you already have linked is
+  // a no-op success (this is what caused spurious "linked to another account"
+  // errors when the UI re-prompted after an auto-reconnect race). Only a wallet
+  // genuinely held by a DIFFERENT account is rejected.
+  const { rows: taken } = await db.query<{ id: string }>(
+    `SELECT id FROM users WHERE wallet = $1`,
+    [wallet],
   );
-  if (taken.length > 0) return fail(res, 409, 'That wallet is already linked to another X account');
+  const heldByOther = taken.find((r) => r.id !== req.user!.id);
+  if (heldByOther) {
+    return fail(res, 409, 'That wallet is already linked to another X account');
+  }
+  if (taken.some((r) => r.id === req.user!.id)) {
+    // Already linked to this same account — nothing to do.
+    return res.json({ wallet, alreadyLinked: true });
+  }
 
   await db.query(
     `UPDATE users SET wallet = $2, wallet_verified_at = now() WHERE id = $1`,
