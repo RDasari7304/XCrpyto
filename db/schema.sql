@@ -51,7 +51,9 @@ CREATE TABLE IF NOT EXISTS tip_intents (
   recipient_x_user_id TEXT NOT NULL,
   recipient_x_handle TEXT,
   recipient_wallet   TEXT,              -- set only when the recipient is registered
-  lamports           BIGINT NOT NULL CHECK (lamports > 0),
+  lamports           BIGINT NOT NULL CHECK (lamports > 0),  -- base units of the token
+  token_symbol       TEXT NOT NULL DEFAULT 'SOL',
+  token_mint         TEXT,              -- null for native SOL
   route              TEXT NOT NULL,     -- direct | escrow
   status             TEXT NOT NULL DEFAULT 'awaiting_approval',
                                         -- awaiting_approval | submitted | confirmed | expired | cancelled
@@ -63,6 +65,8 @@ CREATE TABLE IF NOT EXISTS tip_intents (
   expires_at         TIMESTAMPTZ NOT NULL,
   confirmed_at       TIMESTAMPTZ
 );
+ALTER TABLE tip_intents ADD COLUMN IF NOT EXISTS token_symbol TEXT NOT NULL DEFAULT 'SOL';
+ALTER TABLE tip_intents ADD COLUMN IF NOT EXISTS token_mint TEXT;
 CREATE INDEX IF NOT EXISTS intents_sender_idx ON tip_intents(sender_user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS intents_recipient_idx ON tip_intents(recipient_x_user_id)
   WHERE route = 'escrow';

@@ -140,7 +140,7 @@ export default function Dashboard() {
           <div className="row" key={p.id}>
             <span className="row-main">
               <strong>
-                {p.amountSol} SOL to {p.to ? `@${p.to}` : 'an unregistered account'}
+                {p.amount} {p.token} to {p.to ? `@${p.to}` : 'an unregistered account'}
               </strong>
               <span className="row-sub">
                 {p.route === 'escrow' ? 'Goes to escrow until they join' : 'Direct to their wallet'} ·
@@ -161,7 +161,7 @@ export default function Dashboard() {
         account.claimable.map((c) => (
           <div className="row" key={c.escrow}>
             <span className="row-main">
-              <strong className="held">{c.amountSol} SOL</strong>
+              <strong className="held">{c.amount} {c.token}</strong>
               <span className="row-sub">
                 from {c.from ? `@${c.from}` : 'someone'} · returns to them after{' '}
                 {new Date(c.refundableAfter).toLocaleDateString()}
@@ -186,7 +186,7 @@ export default function Dashboard() {
           <div className="row" key={i}>
             <span className="row-main">
               <strong>
-                {s.amountSol} SOL to {s.to ? `@${s.to}` : 'an unregistered account'}
+                {s.amount} {s.token} to {s.to ? `@${s.to}` : 'an unregistered account'}
               </strong>
               <span className="row-sub">
                 {new Date(s.at).toLocaleDateString()} ·{' '}

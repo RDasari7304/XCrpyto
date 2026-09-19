@@ -92,8 +92,8 @@ export default function Approve() {
 
       <div className="slip">
         <p className="amount">
-          {intent.amountSol}
-          <span className="unit">SOL</span>
+          {intent.amount}
+          <span className="unit">{intent.token}</span>
         </p>
 
         <dl className="facts">
@@ -152,7 +152,7 @@ export default function Approve() {
           </div>
         ) : (
           <button className="primary" onClick={send} disabled={sending}>
-            {sending ? 'Waiting for your wallet…' : `Send ${intent.amountSol} SOL`}
+            {sending ? 'Waiting for your wallet…' : `Send ${intent.amount} ${intent.token}`}
           </button>
         )}
       </div>

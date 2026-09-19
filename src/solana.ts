@@ -7,7 +7,15 @@ import {
   TransactionInstruction,
   ComputeBudgetProgram,
 } from '@solana/web3.js';
+import {
+  getAssociatedTokenAddress,
+  createAssociatedTokenAccountInstruction,
+  createTransferCheckedInstruction,
+  getAccount,
+  TokenAccountNotFoundError,
+} from '@solana/spl-token';
 import { config, escrowProgramId, attestorKeypair } from './config.js';
+import type { TokenInfo } from './tokens.js';
 
 export const connection = new Connection(config.solana.rpcUrl, 'confirmed');
 
@@ -129,15 +137,75 @@ export function transferIx(from: PublicKey, to: PublicKey, lamports: bigint): Tr
 }
 
 /**
+ * Build the instructions to send an SPL token from `from` to `to`.
+ *
+ * SPL tokens don't live at a wallet address directly — each (wallet, mint) pair
+ * has an "associated token account" (ATA) that holds that token. So:
+ *  - resolve both sides' ATAs,
+ *  - if the recipient has never held this token, prepend an instruction that
+ *    creates their ATA (the sender pays the ~0.002 SOL rent for it),
+ *  - transfer with `transferChecked`, which verifies the mint and decimals
+ *    on-chain so a wrong-decimals bug can't silently move the wrong amount.
+ */
+export async function splTransferIxs(opts: {
+  from: PublicKey;
+  to: PublicKey;
+  mint: PublicKey;
+  amount: bigint;
+  decimals: number;
+}): Promise<{ ixs: TransactionInstruction[]; destTokenAccount: PublicKey }> {
+  const fromAta = await getAssociatedTokenAddress(opts.mint, opts.from);
+  const toAta = await getAssociatedTokenAddress(opts.mint, opts.to);
+  const ixs: TransactionInstruction[] = [];
+
+  let recipientHasAta = true;
+  try {
+    await getAccount(connection, toAta);
+  } catch (err) {
+    if (err instanceof TokenAccountNotFoundError) recipientHasAta = false;
+    else throw err;
+  }
+  if (!recipientHasAta) {
+    ixs.push(
+      createAssociatedTokenAccountInstruction(opts.from, toAta, opts.to, opts.mint),
+    );
+  }
+
+  ixs.push(
+    createTransferCheckedInstruction(
+      fromAta,
+      opts.mint,
+      toAta,
+      opts.from,
+      opts.amount,
+      opts.decimals,
+    ),
+  );
+  return { ixs, destTokenAccount: toAta };
+}
+
+/** The account whose balance should rise: the wallet for SOL, the ATA for SPL. */
+export async function creditDestination(
+  wallet: PublicKey,
+  token: TokenInfo,
+): Promise<PublicKey> {
+  if (!token.mint) return wallet;
+  return getAssociatedTokenAddress(token.mint, wallet);
+}
+
+/**
  * Confirm on-chain that a signature actually did what the intent claimed.
- * The client tells us a signature; the chain tells us the truth, so we check
- * the destination's balance really rose by the promised amount before marking
- * an intent confirmed.
+ * The client tells us a signature; the chain tells us the truth.
+ *
+ * For SOL, the destination is a wallet and we compare its lamport balance.
+ * For SPL, the destination is a token account and lamports don't change on a
+ * token transfer — so we compare the token balances in meta instead.
  */
 export async function verifyCredit(
   signature: string,
   destination: PublicKey,
-  lamports: bigint,
+  amount: bigint,
+  isSpl = false,
 ): Promise<boolean> {
   const tx = await connection.getTransaction(signature, {
     commitment: 'confirmed',
@@ -149,7 +217,15 @@ export async function verifyCredit(
   const index = keys.findIndex((k) => k.equals(destination));
   if (index < 0) return false;
 
+  if (isSpl) {
+    const pre = tx.meta!.preTokenBalances?.find((b) => b.accountIndex === index);
+    const post = tx.meta!.postTokenBalances?.find((b) => b.accountIndex === index);
+    const preAmt = BigInt(pre?.uiTokenAmount.amount ?? '0');
+    const postAmt = BigInt(post?.uiTokenAmount.amount ?? '0');
+    return postAmt - preAmt >= amount;
+  }
+
   const pre = BigInt(tx.meta!.preBalances[index]);
   const post = BigInt(tx.meta!.postBalances[index]);
-  return post - pre >= lamports;
+  return post - pre >= amount;
 }

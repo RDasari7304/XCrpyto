@@ -1,6 +1,7 @@
-import { config, db, lamportsToSol } from './config.js';
+import { config, db } from './config.js';
 import { parseCommand, validateTipAmount } from './commands.js';
 import { createIntent } from './intents.js';
+import { fromBaseUnits } from './tokens.js';
 import { fetchMentions, lookupHandle, reply, RateLimited, type Mention } from './x.js';
 import { rateLimit } from './security.js';
 
@@ -53,7 +54,7 @@ async function handleMention(m: Mention): Promise<void> {
     return;
   }
 
-  const amountError = validateTipAmount(cmd.lamports);
+  const amountError = validateTipAmount(cmd.amount);
   if (amountError) {
     await reply(m.id, amountError);
     return;
@@ -99,13 +100,22 @@ async function handleMention(m: Mention): Promise<void> {
     senderUserId: rows[0].id,
     recipientXUserId: recipient.id,
     recipientXHandle: recipient.handle,
-    lamports: cmd.lamports,
+    amount: cmd.amount,
+    token: cmd.token,
     sourceTweetId: m.id,
   });
+  const who = recipient.handle ? '@' + recipient.handle : 'They';
   if (intent === 'recipient_not_registered') {
     await reply(
       m.id,
-      `${recipient.handle ? '@' + recipient.handle : 'They'} hasn't connected a wallet yet. Ask them to set one up at ${config.webOrigin}, then try again.`,
+      `${who} hasn't connected a wallet yet. Ask them to set one up at ${config.webOrigin}, then try again.`,
+    );
+    return;
+  }
+  if (intent === 'spl_needs_wallet') {
+    await reply(
+      m.id,
+      `${who} needs a connected wallet to receive ${cmd.token.symbol}. Ask them to sign up at ${config.webOrigin}, then try again. (Holding ${cmd.token.symbol} for unregistered users isn't supported yet — only SOL.)`,
     );
     return;
   }
@@ -114,7 +124,7 @@ async function handleMention(m: Mention): Promise<void> {
   const to = recipient.handle ? `@${recipient.handle}` : 'them';
   await reply(
     m.id,
-    `Confirm your transaction 👇\n\n${lamportsToSol(cmd.lamports)} SOL to ${to} — sign it in your own wallet. Expires in ${config.limits.intentTtlMinutes} min.\n\n${config.webOrigin}/approve/${intent.id}`,
+    `Confirm your transaction 👇\n\n${fromBaseUnits(cmd.amount, cmd.token)} ${cmd.token.symbol} to ${to} — sign it in your own wallet. Expires in ${config.limits.intentTtlMinutes} min.\n\n${config.webOrigin}/approve/${intent.id}`,
   );
 }
 

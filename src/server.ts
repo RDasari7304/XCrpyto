@@ -8,6 +8,13 @@ import nacl from 'tweetnacl';
 import bs58 from 'bs58';
 import { PublicKey, Transaction } from '@solana/web3.js';
 import { config, db, lamportsToSol, attestorKeypair } from './config.js';
+import { tokenBySymbol, fromBaseUnits } from './tokens.js';
+
+/** Format a stored base-unit amount by its token symbol (defaults to SOL). */
+function fmtAmount(amount: string, symbol: string | null): string {
+  const t = symbol ? tokenBySymbol(symbol) : null;
+  return t ? fromBaseUnits(BigInt(amount), t) : lamportsToSol(BigInt(amount));
+}
 import { beginOAuth, exchangeCode, me } from './x.js';
 import {
   buildUnsigned,
@@ -136,7 +143,7 @@ app.get('/api/me', requireAuth, async (req: AuthedRequest, res) => {
   const u = req.user!;
   const [intents, waiting, sent] = await Promise.all([
     db.query(
-      `SELECT id, recipient_x_handle, lamports, route, expires_at
+      `SELECT id, recipient_x_handle, lamports, token_symbol, route, expires_at
          FROM tip_intents
         WHERE sender_user_id = $1 AND status = 'awaiting_approval' AND expires_at > now()
         ORDER BY created_at DESC LIMIT 20`,
@@ -150,7 +157,7 @@ app.get('/api/me', requireAuth, async (req: AuthedRequest, res) => {
       [u.x_user_id],
     ),
     db.query(
-      `SELECT recipient_x_handle, lamports, route, status, tx_signature, created_at
+      `SELECT recipient_x_handle, lamports, token_symbol, route, status, tx_signature, created_at
          FROM tip_intents
         WHERE sender_user_id = $1 AND status = 'confirmed'
         ORDER BY confirmed_at DESC LIMIT 20`,
@@ -170,19 +177,22 @@ app.get('/api/me', requireAuth, async (req: AuthedRequest, res) => {
     pendingApprovals: intents.rows.map((r) => ({
       id: r.id,
       to: r.recipient_x_handle,
-      amountSol: lamportsToSol(BigInt(r.lamports)),
+      amount: fmtAmount(r.lamports, r.token_symbol),
+      token: r.token_symbol ?? 'SOL',
       route: r.route,
       expiresAt: r.expires_at,
     })),
     claimable: waiting.rows.map((r) => ({
       escrow: r.pda,
       from: r.sender_x_handle,
-      amountSol: lamportsToSol(BigInt(r.lamports)),
+      amount: fmtAmount(r.lamports, 'SOL'),
+      token: 'SOL',
       refundableAfter: r.expires_at,
     })),
     sent: sent.rows.map((r) => ({
       to: r.recipient_x_handle,
-      amountSol: lamportsToSol(BigInt(r.lamports)),
+      amount: fmtAmount(r.lamports, r.token_symbol),
+      token: r.token_symbol ?? 'SOL',
       route: r.route,
       signature: r.tx_signature,
       at: r.created_at,
@@ -264,7 +274,8 @@ app.get('/api/intents/:id', requireAuth, async (req: AuthedRequest, res) => {
   res.json({
     id: intent.id,
     to: intent.recipient_x_handle,
-    amountSol: lamportsToSol(BigInt(intent.lamports)),
+    amount: fmtAmount(intent.lamports, intent.token_symbol),
+    token: intent.token_symbol ?? 'SOL',
     route: intent.route,
     status: intent.status,
     expiresAt: intent.expires_at,
@@ -360,7 +371,8 @@ app.post('/api/claims/:pda', requireAuth, requireCsrf, limiter('claim', 30, 600)
 
   res.json({
     base64: tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString('base64'),
-    amountSol: lamportsToSol(BigInt(escrow.lamports)),
+    amount: lamportsToSol(BigInt(escrow.lamports)),
+    token: 'SOL',
   });
 });
 

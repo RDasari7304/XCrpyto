@@ -41,19 +41,22 @@ export interface Account {
   pendingApprovals: Array<{
     id: string;
     to: string | null;
-    amountSol: string;
+    amount: string;
+    token: string;
     route: string;
     expiresAt: string;
   }>;
   claimable: Array<{
     escrow: string;
     from: string | null;
-    amountSol: string;
+    amount: string;
+    token: string;
     refundableAfter: string;
   }>;
   sent: Array<{
     to: string | null;
-    amountSol: string;
+    amount: string;
+    token: string;
     route: string;
     signature: string | null;
     at: string;
@@ -87,7 +90,8 @@ export const walletVerify = (body: {
 export interface IntentView {
   id: string;
   to: string | null;
-  amountSol: string;
+  amount: string;
+  token: string;
   route: 'direct' | 'escrow';
   status: string;
   expiresAt: string;
@@ -110,7 +114,7 @@ export const confirmIntent = (id: string, signature: string) =>
   });
 
 export const buildClaimTx = (pda: string) =>
-  request<{ base64: string; amountSol: string }>(`/api/claims/${pda}`, { method: 'POST' });
+  request<{ base64: string; amount: string; token: string }>(`/api/claims/${pda}`, { method: 'POST' });
 
 export const confirmClaim = (pda: string, signature: string) =>
   request<{ status: string }>(`/api/claims/${pda}/confirm`, {

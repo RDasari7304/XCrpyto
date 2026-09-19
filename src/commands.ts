@@ -1,27 +1,29 @@
-import { solToLamports, config } from './config.js';
+import { config } from './config.js';
+import { allTokenWords, tokenByAlias, toBaseUnits, type TokenInfo } from './tokens.js';
 
 export type Command =
   | {
       kind: 'tip';
-      lamports: bigint;
+      amount: bigint; // base units of `token`
+      token: TokenInfo;
       target: { type: 'handle'; handle: string } | { type: 'reply_author' };
     }
   | { kind: 'help' }
   | { kind: 'none' };
 
-const UNITS = '(?:sol|solana|\\$sol)';
-const AMOUNT = '(\\d{1,12}(?:\\.\\d{1,9})?)';
+// Any accepted token spelling, longest-first so "solana"/"usdc" match cleanly.
+const UNITS = `(?:${allTokenWords().join('|')})`;
+const AMOUNT = '(\\d{1,15}(?:\\.\\d{1,9})?)';
 
 /**
- * A mention is an instruction to the application, not an action taken through
- * anyone's X account. Nothing here moves money; it only produces a proposal the
- * sender must open and sign.
+ * A mention is an instruction to the app, not an action on anyone's account.
+ * Nothing here moves money; it only produces a proposal the sender must sign.
  *
- * Accepted:
- *   @XCryptoBot send 5 sol to @alice
- *   @XCryptoBot send 0.25 SOL to this user
- *   @XCryptoBot tip @alice 1 sol
- *   @XCryptoBot tip 1 sol            -> recipient = author of the replied-to post
+ * Accepted (SOL or any supported SPL token):
+ *   @XCryptoBot send 5 usdc to @alice
+ *   @XCryptoBot send 0.25 sol to this user
+ *   @XCryptoBot tip @alice 1000 bonk
+ *   @XCryptoBot tip 1 jup            -> recipient = author of the replied-to post
  */
 export function parseCommand(text: string): Command {
   const t = text.replace(/\s+/g, ' ').trim();
@@ -32,28 +34,28 @@ export function parseCommand(text: string): Command {
   if (/^\s*(help|commands|how)\b/i.test(body)) return { kind: 'help' };
 
   const patterns: Array<[RegExp, (m: RegExpMatchArray) => Command]> = [
-    // tip @alice 1 sol
+    // tip @alice 1 usdc   (amount + unit captured as groups 2,3)
     [
-      new RegExp(`\\b(?:tip|send|pay)\\s+@(\\w{1,15})\\s+${AMOUNT}\\s*${UNITS}\\b`, 'i'),
-      (m) => tipTo(m[2], { type: 'handle', handle: m[1] }),
+      new RegExp(`\\b(?:tip|send|pay)\\s+@(\\w{1,15})\\s+${AMOUNT}\\s*(${UNITS})\\b`, 'i'),
+      (m) => tipTo(m[2], m[3], { type: 'handle', handle: m[1] }),
     ],
-    // send 5 sol to @alice
+    // send 5 usdc to @alice
     [
-      new RegExp(`\\b(?:tip|send|pay)\\s+${AMOUNT}\\s*${UNITS}\\s+to\\s+@(\\w{1,15})`, 'i'),
-      (m) => tipTo(m[1], { type: 'handle', handle: m[2] }),
+      new RegExp(`\\b(?:tip|send|pay)\\s+${AMOUNT}\\s*(${UNITS})\\s+to\\s+@(\\w{1,15})`, 'i'),
+      (m) => tipTo(m[1], m[2], { type: 'handle', handle: m[3] }),
     ],
-    // send 5 sol to this user / them / OP / above
+    // send 5 usdc to this user / them / OP / above
     [
       new RegExp(
-        `\\b(?:tip|send|pay)\\s+${AMOUNT}\\s*${UNITS}\\s+to\\s+(?:this\\s+(?:user|guy|person)|them|him|her|op|the\\s+op|above)\\b`,
+        `\\b(?:tip|send|pay)\\s+${AMOUNT}\\s*(${UNITS})\\s+to\\s+(?:this\\s+(?:user|guy|person)|them|him|her|op|the\\s+op|above)\\b`,
         'i',
       ),
-      (m) => tipTo(m[1], { type: 'reply_author' }),
+      (m) => tipTo(m[1], m[2], { type: 'reply_author' }),
     ],
-    // tip 5 sol
+    // tip 5 usdc
     [
-      new RegExp(`\\b(?:tip|send|pay)\\s+${AMOUNT}\\s*${UNITS}\\s*$`, 'i'),
-      (m) => tipTo(m[1], { type: 'reply_author' }),
+      new RegExp(`\\b(?:tip|send|pay)\\s+${AMOUNT}\\s*(${UNITS})\\s*$`, 'i'),
+      (m) => tipTo(m[1], m[2], { type: 'reply_author' }),
     ],
   ];
 
@@ -70,12 +72,17 @@ export function parseCommand(text: string): Command {
   return { kind: 'none' };
 }
 
-function tipTo(amount: string, target: Extract<Command, { kind: 'tip' }>['target']): Command {
-  return { kind: 'tip', lamports: solToLamports(amount), target };
+function tipTo(
+  amount: string,
+  unit: string,
+  target: Extract<Command, { kind: 'tip' }>['target'],
+): Command {
+  const token = tokenByAlias(unit);
+  if (!token) return { kind: 'none' };
+  return { kind: 'tip', amount: toBaseUnits(amount, token), token, target };
 }
 
-export function validateTipAmount(lamports: bigint): string | null {
-  if (lamports < config.limits.minTipLamports) return 'That is below the minimum tip.';
-  if (lamports > config.limits.maxTipLamports) return 'That is above the maximum tip.';
+export function validateTipAmount(amount: bigint): string | null {
+  if (amount <= 0n) return 'Amount must be greater than zero.';
   return null;
 }
