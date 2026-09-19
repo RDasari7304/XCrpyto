@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { Connection, Transaction } from '@solana/web3.js';
 import { useWallet, WalletButton, base64ToBytes } from '../wallet';
 import { ApiError, buildIntentTx, confirmIntent, getAccount, getIntent, loginUrl, runtimeRpcUrl, type IntentView } from '../api';
+import { evmSend, evmConfirm, evmConnect, currentEvmAddress } from '../evm';
 import { Coin } from '../Coin';
 
 let _conn: Connection | null = null;
@@ -45,10 +46,34 @@ export default function Approve() {
   }, [load]);
 
   const send = async () => {
-    if (!id || !signTransaction) return;
+    if (!id) return;
+    const isEvm = intent?.chain === 'robinhood';
+    if (!isEvm && !signTransaction) return;
     setError(null);
     setSending(true);
     try {
+      if (intent && intent.chain === 'robinhood') {
+        // EVM path: build + sign + broadcast client-side, then report the hash.
+        if (!intent.recipientWallet || !intent.contract) {
+          throw new Error('Recipient has no Robinhood Chain wallet linked.');
+        }
+        const from = (await currentEvmAddress()) ?? (await evmConnect());
+        // Exact base-unit amount from the server — no lossy decimal re-parsing.
+        const amount = BigInt(intent.amountBase);
+        const hash = await evmSend({
+          from,
+          to: intent.recipientWallet,
+          amount,
+          contract: intent.contract,
+        });
+        await evmConfirm(hash);
+        await confirmIntent(id, hash);
+        setSignature(hash);
+        await load();
+        return;
+      }
+
+      // Solana path.
       const { base64 } = await buildIntentTx(id);
       const tx = Transaction.from(base64ToBytes(base64));
       const signed = await signTransaction(tx);

@@ -82,22 +82,31 @@ async function handleMention(m: Mention): Promise<void> {
   }
   if (recipient.id === config.x.botUserId) return;
 
-  // The sender must have signed in at least once, so we know which account the
-  // approval link belongs to.
-  const { rows } = await db.query<{ id: string; wallet: string | null }>(
-    `SELECT id, wallet FROM users WHERE x_user_id = $1`,
+  // The sender must have signed in and linked the wallet for this token's chain.
+  const { rows } = await db.query<{ id: string; wallet: string | null; evm_wallet: string | null }>(
+    `SELECT id, wallet, evm_wallet FROM users WHERE x_user_id = $1`,
     [m.authorId],
   );
-  if (!rows[0]?.wallet) {
+  const senderRow = rows[0];
+  const needsEvm = cmd.token.chain === 'robinhood';
+  if (!senderRow) {
+    await reply(m.id, `Connect a wallet first at ${config.webOrigin} — takes a minute, then this will work.`);
+    return;
+  }
+  if (needsEvm && !senderRow.evm_wallet) {
     await reply(
       m.id,
-      `Connect a wallet first at ${config.webOrigin} — takes a minute, then this will work.`,
+      `To send ${cmd.token.symbol} you need a linked Robinhood Chain wallet. Link one at ${config.webOrigin}, then try again.`,
     );
+    return;
+  }
+  if (!needsEvm && !senderRow.wallet) {
+    await reply(m.id, `Connect a wallet first at ${config.webOrigin} — takes a minute, then this will work.`);
     return;
   }
 
   const intent = await createIntent({
-    senderUserId: rows[0].id,
+    senderUserId: senderRow.id,
     recipientXUserId: recipient.id,
     recipientXHandle: recipient.handle,
     amount: cmd.amount,
@@ -105,10 +114,10 @@ async function handleMention(m: Mention): Promise<void> {
     sourceTweetId: m.id,
   });
   const who = recipient.handle ? '@' + recipient.handle : 'They';
-  if (intent === 'chain_not_ready') {
+  if (intent === 'evm_needs_wallet') {
     await reply(
       m.id,
-      `${cmd.token.symbol} on Robinhood Chain is coming soon — not enabled for tips yet. SOL, USDC, CATE, ZCAT and ANSEM work today.`,
+      `${who} needs a linked Robinhood Chain wallet to receive ${cmd.token.symbol}. Ask them to link one at ${config.webOrigin}, then try again.`,
     );
     return;
   }

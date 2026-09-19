@@ -344,12 +344,16 @@ app.post('/api/wallet/verify-evm', requireAuth, requireCsrf, limiter('verify', 1
 app.get('/api/intents/:id', requireAuth, async (req: AuthedRequest, res) => {
   const intent = await getIntentForSender(req.params.id, req.user!.id);
   if (!intent) return fail(res, 404, 'Tip request not found');
+  const viewToken = tokenBySymbol(intent.token_symbol ?? 'SOL');
   res.json({
     id: intent.id,
     to: intent.recipient_x_handle,
     amount: fmtAmount(intent.lamports, intent.token_symbol),
     token: intent.token_symbol ?? 'SOL',
     logo: logoFor(intent.token_symbol),
+    chain: viewToken?.chain ?? 'solana',
+    contract: viewToken?.contract ?? null,
+    amountBase: intent.lamports,
     route: intent.route,
     status: intent.status,
     expiresAt: intent.expires_at,

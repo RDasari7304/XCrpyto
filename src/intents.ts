@@ -11,6 +11,7 @@ import {
   verifyCredit,
 } from './solana.js';
 import { tokenBySymbol, fromBaseUnits, type TokenInfo } from './tokens.js';
+import { verifyEvmErc20Transfer } from './evm-verify.js';
 
 export interface Intent {
   id: string;
@@ -59,12 +60,40 @@ export async function createIntent(opts: {
   amount: bigint;
   token: TokenInfo;
   sourceTweetId: string;
-}): Promise<Intent | null | 'recipient_not_registered' | 'spl_needs_wallet' | 'chain_not_ready'> {
-  // Robinhood Chain (EVM) transfers aren't wired into the mention flow yet —
-  // only the standalone test path exists. Refuse cleanly instead of creating a
-  // broken intent (and its 18-decimal amount would also need the widened
-  // NUMERIC column). Remove this once the EVM approve branch ships.
-  if (opts.token.chain !== 'solana') return 'chain_not_ready';
+}): Promise<Intent | null | 'recipient_not_registered' | 'spl_needs_wallet' | 'evm_needs_wallet'> {
+  const isEvm = opts.token.chain === 'robinhood';
+
+  if (isEvm) {
+    // AI etc. settle to the recipient's linked EVM (0x) address, not Solana.
+    const { rows } = await db.query<{ evm_wallet: string | null }>(
+      `SELECT evm_wallet FROM users WHERE x_user_id = $1 AND evm_wallet IS NOT NULL`,
+      [opts.recipientXUserId],
+    );
+    const evmWallet = rows[0]?.evm_wallet ?? null;
+    if (!evmWallet) return 'evm_needs_wallet';
+
+    const { rows: created } = await db.query<Intent>(
+      `INSERT INTO tip_intents
+         (sender_user_id, recipient_x_user_id, recipient_x_handle, recipient_wallet,
+          lamports, token_symbol, token_mint, chain, route, source_tweet_id, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'robinhood', 'direct', $8,
+               now() + ($9 || ' minutes')::interval)
+       ON CONFLICT (source_tweet_id) DO NOTHING
+       RETURNING *`,
+      [
+        opts.senderUserId,
+        opts.recipientXUserId,
+        opts.recipientXHandle,
+        evmWallet,
+        opts.amount.toString(),
+        opts.token.symbol,
+        opts.token.contract ?? null,
+        opts.sourceTweetId,
+        String(config.limits.intentTtlMinutes),
+      ],
+    );
+    return created[0] ?? null;
+  }
 
   const { rows: recipientRows } = await db.query<{ wallet: string | null }>(
     `SELECT wallet FROM users WHERE x_user_id = $1 AND wallet IS NOT NULL`,
@@ -131,9 +160,16 @@ export async function buildIntentTransaction(
     throw new IntentError('This tip request expired. Post the reply again to redo it.');
   }
 
-  const sender = new PublicKey(senderWallet);
   const token = intentToken(intent);
   const amount = BigInt(intent.lamports);
+
+  if (token.chain === 'robinhood') {
+    // EVM transactions are built and signed client-side via the wallet's EVM
+    // provider (see the approval page). There's no server-built blob here.
+    throw new IntentError('Use the EVM signing path for this token.');
+  }
+
+  const sender = new PublicKey(senderWallet);
 
   if (intent.route === 'direct') {
     const { rows } = await db.query<{ wallet: string | null }>(
@@ -204,6 +240,25 @@ export async function confirmIntent(
 ): Promise<void> {
   const token = intentToken(intent);
   const amount = BigInt(intent.lamports);
+
+  // Robinhood Chain (EVM): verify the tx hash against the Robinhood RPC — the
+  // ERC-20 Transfer log must show `amount` reaching the recipient's EVM wallet.
+  if (token.chain === 'robinhood') {
+    if (!token.contract) throw new IntentError('Missing token contract');
+    const ok = await verifyEvmErc20Transfer({
+      txHash: signature,
+      contract: token.contract,
+      recipient: intent.recipient_wallet!, // stored EVM 0x address for robinhood intents
+      amount,
+    });
+    if (!ok) throw new IntentError('That transaction did not land as described.');
+    await db.query(
+      `UPDATE tip_intents SET status = 'confirmed', tx_signature = $2, confirmed_at = now()
+        WHERE id = $1 AND status IN ('awaiting_approval', 'submitted')`,
+      [intent.id, signature],
+    );
+    return;
+  }
 
   let ok: boolean;
   let escrowDestination: PublicKey | null = null;
