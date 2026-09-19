@@ -4,12 +4,13 @@ import { Link } from 'react-router-dom';
 import bs58 from 'bs58';
 import { useWallet, WalletButton } from '../wallet';
 import { Coin } from '../Coin';
-import { useEvmVerify, ROBINHOOD_CHAIN, evmSend, evmConfirm, evmErc20Balance, currentEvmAddress } from '../evm';
+import { useEvmVerify, ROBINHOOD_CHAIN, evmSend, evmConfirm, evmErc20Balance, currentEvmAddress, evmConnect, evmPersonalSign } from '../evm';
 import {
   getAccount,
   logout,
   walletChallenge,
   walletVerify,
+  walletVerifyEvm,
   type Account,
 } from '../api';
 
@@ -28,6 +29,8 @@ export default function Dashboard() {
   const [aiAmt, setAiAmt] = useState('');
   const [aiStatus, setAiStatus] = useState<string | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
+  const [evmLinkBusy, setEvmLinkBusy] = useState(false);
+  const [evmLinkMsg, setEvmLinkMsg] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -40,6 +43,23 @@ export default function Dashboard() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  const linkEvmWallet = async () => {
+    setEvmLinkMsg(null);
+    setEvmLinkBusy(true);
+    try {
+      const address = await evmConnect();
+      const { message, nonce } = await walletChallenge();
+      const signature = await evmPersonalSign(message, address);
+      await walletVerifyEvm({ address, message, signature, nonce });
+      await refresh();
+      setEvmLinkMsg('✓ Robinhood Chain wallet linked');
+    } catch (err: any) {
+      setEvmLinkMsg(err?.message ?? 'Could not link EVM wallet');
+    } finally {
+      setEvmLinkBusy(false);
+    }
+  };
 
   const linkWallet = async () => {
     if (!publicKey || !signMessage) return;
@@ -216,6 +236,31 @@ export default function Dashboard() {
             {account.wallet && !publicKey && (
               <p className="muted" style={{ marginTop: '1rem' }}>
                 {short(account.wallet)} is linked. Connect it again to sign anything.
+              </p>
+            )}
+          </div>
+
+          <h2>Robinhood Chain wallet</h2>
+          <div className="card">
+            {account.evmWallet ? (
+              <p className="muted" style={{ margin: 0 }}>
+                Linked: <span className="mono">{account.evmWallet.slice(0, 6)}…{account.evmWallet.slice(-4)}</span>
+                <br />AI tips sent to you route here.
+              </p>
+            ) : (
+              <>
+                <p className="muted" style={{ marginTop: 0 }}>
+                  Link an EVM address to send and receive AI on Robinhood Chain. A Solana wallet
+                  can't hold AI, so this is a separate address (Phantom's Ethereum mode).
+                </p>
+                <button className="btn btn-primary" onClick={() => void linkEvmWallet()} disabled={evmLinkBusy}>
+                  {evmLinkBusy ? 'Waiting for your wallet…' : 'Link Robinhood Chain wallet'}
+                </button>
+              </>
+            )}
+            {evmLinkMsg && (
+              <p className={evmLinkMsg.startsWith('✓') ? 'muted' : 'error'} style={{ marginTop: '0.85rem' }}>
+                {evmLinkMsg}
               </p>
             )}
           </div>

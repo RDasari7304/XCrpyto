@@ -215,3 +215,21 @@ export function currentEvmAddress(): Promise<string | null> {
     .then((a: string[]) => a[0] ?? null)
     .catch(() => null);
 }
+
+/** personal_sign a message with the connected EVM account; returns 0x signature. */
+export async function evmPersonalSign(message: string, address: string): Promise<string> {
+  const p = evmProvider();
+  if (!p) throw new Error('No EVM wallet found');
+  // personal_sign params order for most wallets: [message, address]
+  const sig: string = await p.request({ method: 'personal_sign', params: [message, address] });
+  return sig;
+}
+
+/** Connect the EVM provider and return the selected address (0x…). */
+export async function evmConnect(): Promise<string> {
+  const p = evmProvider();
+  if (!p) throw new Error('No EVM wallet found. Enable Phantom.');
+  const accounts: string[] = await p.request({ method: 'eth_requestAccounts' });
+  if (!accounts[0]) throw new Error('Wallet returned no address');
+  return accounts[0];
+}

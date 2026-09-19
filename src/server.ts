@@ -146,6 +146,10 @@ app.post('/auth/logout', requireAuth, requireCsrf, async (req, res) => {
 
 app.get('/api/me', requireAuth, async (req: AuthedRequest, res) => {
   const u = req.user!;
+  const evmRow = await db.query<{ evm_wallet: string | null }>(
+    `SELECT evm_wallet FROM users WHERE id = $1`,
+    [u.id],
+  );
   const [intents, waiting, sent] = await Promise.all([
     db.query(
       `SELECT id, recipient_x_handle, lamports, token_symbol, route, expires_at
@@ -173,6 +177,7 @@ app.get('/api/me', requireAuth, async (req: AuthedRequest, res) => {
   res.json({
     handle: u.x_handle,
     wallet: u.wallet,
+    evmWallet: evmRow.rows[0]?.evm_wallet ?? null,
     csrfToken: req.csrfSecret,
     cluster: config.solana.cluster,
     rpcUrl: config.solana.rpcUrl,
@@ -280,6 +285,58 @@ app.post('/api/wallet/verify', requireAuth, requireCsrf, limiter('verify', 10, 6
     [req.user!.id, wallet],
   );
   res.json({ wallet });
+});
+
+// Link an EVM (Robinhood Chain) address. Reuses the same challenge; verifies an
+// EVM personal_sign via viem. A Solana address can't receive AI, so users who
+// want to send/receive on Robinhood Chain link a 0x address here too.
+app.post('/api/wallet/verify-evm', requireAuth, requireCsrf, limiter('verify', 10, 600), async (req: AuthedRequest, res) => {
+  const { address, message, signature, nonce } = req.body ?? {};
+  if (typeof address !== 'string' || !/^0x[a-fA-F0-9]{40}$/.test(address)) {
+    return fail(res, 400, 'That is not a valid EVM address');
+  }
+  if (typeof message !== 'string' || typeof signature !== 'string' || typeof nonce !== 'string') {
+    return fail(res, 400, 'Missing signature');
+  }
+
+  const { rows } = await db.query(
+    `DELETE FROM wallet_nonces
+      WHERE nonce = $1 AND user_id = $2 AND created_at > now() - ($3 || ' minutes')::interval
+      RETURNING nonce`,
+    [nonce, req.user!.id, String(config.limits.walletNonceTtlMinutes)],
+  );
+  if (rows.length === 0) return fail(res, 400, 'That challenge expired. Try connecting again.');
+  if (!message.includes(`Nonce: ${nonce}`) || !message.includes(`X user id: ${req.user!.x_user_id}`)) {
+    return fail(res, 400, 'Signed message does not match the challenge');
+  }
+
+  let valid = false;
+  try {
+    const { verifyMessage } = await import('viem');
+    valid = await verifyMessage({
+      address: address as `0x${string}`,
+      message,
+      signature: signature as `0x${string}`,
+    });
+  } catch {
+    valid = false;
+  }
+  if (!valid) return fail(res, 400, 'Signature did not verify');
+
+  const normalized = address.toLowerCase();
+  const { rows: taken } = await db.query<{ id: string }>(
+    `SELECT id FROM users WHERE lower(evm_wallet) = $1`,
+    [normalized],
+  );
+  const heldByOther = taken.find((r) => r.id !== req.user!.id);
+  if (heldByOther) return fail(res, 409, 'That wallet is already linked to another X account');
+  if (taken.some((r) => r.id === req.user!.id)) return res.json({ address, alreadyLinked: true });
+
+  await db.query(
+    `UPDATE users SET evm_wallet = $2, evm_verified_at = now() WHERE id = $1`,
+    [req.user!.id, address],
+  );
+  res.json({ address });
 });
 
 // -------------------------------------------------------------- approvals

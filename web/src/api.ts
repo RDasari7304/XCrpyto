@@ -32,6 +32,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export interface Account {
   handle: string | null;
   wallet: string | null;
+  evmWallet: string | null;
   csrfToken: string;
   cluster: string;
   rpcUrl: string;
@@ -88,6 +89,13 @@ export const walletVerify = (body: {
   signature: string;
   nonce: string;
 }) => request<{ wallet: string }>('/api/wallet/verify', { method: 'POST', body: JSON.stringify(body) });
+
+export const walletVerifyEvm = (body: {
+  address: string;
+  message: string;
+  signature: string;
+  nonce: string;
+}) => request<{ address: string }>('/api/wallet/verify-evm', { method: 'POST', body: JSON.stringify(body) });
 
 export interface IntentView {
   id: string;

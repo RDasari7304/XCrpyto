@@ -25,7 +25,8 @@
     "express": "^4.19.2",
     "pg": "^8.12.0",
     "tsx": "^4.19.0",
-    "tweetnacl": "^1.0.3"
+    "tweetnacl": "^1.0.3",
+    "viem": "^2.21.0"
   },
   "devDependencies": {
     "@coral-xyz/anchor": "^0.30.1",
