@@ -15,6 +15,11 @@ function fmtAmount(amount: string, symbol: string | null): string {
   const t = symbol ? tokenBySymbol(symbol) : null;
   return t ? fromBaseUnits(BigInt(amount), t) : lamportsToSol(BigInt(amount));
 }
+
+function logoFor(symbol: string | null): string | null {
+  const t = symbol ? tokenBySymbol(symbol) : null;
+  return t?.logoURI ?? null;
+}
 import { beginOAuth, exchangeCode, me } from './x.js';
 import {
   buildUnsigned,
@@ -179,6 +184,7 @@ app.get('/api/me', requireAuth, async (req: AuthedRequest, res) => {
       to: r.recipient_x_handle,
       amount: fmtAmount(r.lamports, r.token_symbol),
       token: r.token_symbol ?? 'SOL',
+      logo: logoFor(r.token_symbol),
       route: r.route,
       expiresAt: r.expires_at,
     })),
@@ -193,6 +199,7 @@ app.get('/api/me', requireAuth, async (req: AuthedRequest, res) => {
       to: r.recipient_x_handle,
       amount: fmtAmount(r.lamports, r.token_symbol),
       token: r.token_symbol ?? 'SOL',
+      logo: logoFor(r.token_symbol),
       route: r.route,
       signature: r.tx_signature,
       at: r.created_at,
@@ -285,6 +292,7 @@ app.get('/api/intents/:id', requireAuth, async (req: AuthedRequest, res) => {
     to: intent.recipient_x_handle,
     amount: fmtAmount(intent.lamports, intent.token_symbol),
     token: intent.token_symbol ?? 'SOL',
+    logo: logoFor(intent.token_symbol),
     route: intent.route,
     status: intent.status,
     expiresAt: intent.expires_at,

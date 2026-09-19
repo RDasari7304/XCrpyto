@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { Connection, Transaction } from '@solana/web3.js';
 import { useWallet, WalletButton, base64ToBytes } from '../wallet';
 import { ApiError, buildIntentTx, confirmIntent, getAccount, getIntent, loginUrl, runtimeRpcUrl, type IntentView } from '../api';
+import { Coin } from '../Coin';
 
 let _conn: Connection | null = null;
 function rpc(): Connection {
@@ -85,10 +86,13 @@ export default function Approve() {
       <h1>{done ? 'Sent' : 'Confirm this transfer'}</h1>
 
       <div className="card">
-        <p className="amount">
-          {intent.amount}
-          <span className="unit">{intent.token}</span>
-        </p>
+        <div className="amount-row">
+          <Coin symbol={intent.token} logo={intent.logo} size="lg" />
+          <p className="amount">
+            {intent.amount}
+            <span className="unit">{intent.token}</span>
+          </p>
+        </div>
 
         <dl className="facts">
           <div>

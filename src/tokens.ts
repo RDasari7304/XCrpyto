@@ -27,6 +27,8 @@ export interface TokenInfo {
    * received the expected post-fee amount. Omit or 0 for no fee.
    */
   transferFeeBps?: number;
+  /** Coin image URL for the UI. Falls back to a monogram badge if absent/broken. */
+  logoURI?: string;
 }
 
 export const TOKENS: TokenInfo[] = [
@@ -36,6 +38,7 @@ export const TOKENS: TokenInfo[] = [
     mint: null,
     decimals: 9,
     aliases: ['sol', 'solana', '$sol'],
+    logoURI: 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png',
   },
   {
     symbol: 'USDC',
@@ -43,6 +46,7 @@ export const TOKENS: TokenInfo[] = [
     mint: new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'),
     decimals: 6,
     aliases: ['usdc', '$usdc', 'usd'],
+    logoURI: 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/logo.png',
   },
   {
     symbol: 'CATE',

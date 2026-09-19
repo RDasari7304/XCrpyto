@@ -1,26 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Connection } from '@solana/web3.js';
+import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import bs58 from 'bs58';
 import { useWallet, WalletButton } from '../wallet';
+import { Coin } from '../Coin';
 import {
   getAccount,
   logout,
   walletChallenge,
   walletVerify,
-  runtimeRpcUrl,
   type Account,
 } from '../api';
-
-// Kept for parity with Approve; dashboard itself doesn't broadcast, but a shared
-// connection getter avoids a stale baked-in RPC URL if we add reads later.
-let _conn: Connection | null = null;
-function rpc(): Connection {
-  const url = runtimeRpcUrl ?? import.meta.env.VITE_RPC_URL ?? 'https://api.devnet.solana.com';
-  if (!_conn || _conn.rpcEndpoint !== url) _conn = new Connection(url, 'confirmed');
-  return _conn;
-}
-void rpc; // referenced to avoid unused warning; retained intentionally
 
 function short(addr: string): string {
   return `${addr.slice(0, 4)}…${addr.slice(-4)}`;
@@ -75,90 +65,114 @@ export default function Dashboard() {
   if (!account) return <p className="lede">Loading…</p>;
 
   const connectedButUnlinked = publicKey && account.wallet !== publicKey.toBase58();
+  const initials = (account.handle ?? '?').slice(0, 2).toUpperCase();
 
   return (
     <>
-      <h1>@{account.handle}</h1>
-      <p className="lede">
-        {account.wallet
-          ? `Tips settle to ${short(account.wallet)}.`
-          : 'Connect a wallet to start sending and receiving.'}
-      </p>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem' }}>
+        <div>
+          <h1>@{account.handle}</h1>
+          <p className="lede" style={{ marginBottom: 0 }}>
+            {account.wallet
+              ? `Tips settle to ${short(account.wallet)}.`
+              : 'Connect a wallet to start sending and receiving.'}
+          </p>
+        </div>
+        <div className="profile">
+          <span className="who">@{account.handle}</span>
+          <span className="avatar">{initials}</span>
+        </div>
+      </div>
 
       {error && <p className="error">{error}</p>}
 
-      <h2>Wallet</h2>
-      <div className="card">
-        <WalletButton />
-        {connectedButUnlinked && (
-          <>
-            <p className="muted" style={{ margin: '1rem 0 0.75rem' }}>
-              Sign a short message to prove this wallet is yours. It authorizes no transfer and costs
-              no fee.
+      <div className="grid grid-2" style={{ marginTop: '1.5rem' }}>
+        {/* Left column: transactions */}
+        <div>
+          <h2 style={{ marginTop: 0 }}>Waiting for you to sign</h2>
+          {account.pendingApprovals.length === 0 ? (
+            <p className="empty">
+              Nothing pending. Reply to a post with “@{account.botHandle} send 5 usdc to this user”.
             </p>
-            <button className="btn btn-primary" onClick={linkWallet} disabled={busy}>
-              {busy ? 'Waiting for your wallet…' : 'Prove ownership'}
-            </button>
-          </>
-        )}
-        {account.wallet && !publicKey && (
-          <p className="muted" style={{ marginTop: '1rem' }}>
-            {short(account.wallet)} is linked. Connect it again to sign anything.
-          </p>
-        )}
-      </div>
+          ) : (
+            account.pendingApprovals.map((p) => (
+              <div className="tx" key={p.id}>
+                <Coin symbol={p.token} logo={p.logo} />
+                <div className="tx-body">
+                  <div className="tx-line">
+                    <span className="tx-amt">{p.amount}</span>
+                    <span className="tx-sym">{p.token}</span>
+                    <span className="tx-to">to {p.to ? `@${p.to}` : 'an unregistered account'}</span>
+                  </div>
+                  <div className="tx-sub">expires {new Date(p.expiresAt).toLocaleTimeString()}</div>
+                </div>
+                <div className="tx-right">
+                  <Link to={`/approve/${p.id}`}>
+                    <button className="btn btn-primary btn-sm" style={{ width: 'auto', margin: 0 }}>
+                      Review
+                    </button>
+                  </Link>
+                </div>
+              </div>
+            ))
+          )}
 
-      <h2>Waiting for you to sign</h2>
-      {account.pendingApprovals.length === 0 ? (
-        <p className="empty">
-          Nothing pending. Reply to a post with “@{account.botHandle} send 5 usdc to this user”.
-        </p>
-      ) : (
-        account.pendingApprovals.map((p) => (
-          <div className="row" key={p.id}>
-            <span className="row-main">
-              <span className="row-amt">
-                {p.amount} <span className="sym">{p.token}</span> to{' '}
-                {p.to ? `@${p.to}` : 'an unregistered account'}
-              </span>
-              <span className="row-sub">
-                expires {new Date(p.expiresAt).toLocaleTimeString()}
-              </span>
-            </span>
-            <Link to={`/approve/${p.id}`}>
-              <button className="btn btn-ghost btn-sm">Review</button>
-            </Link>
-          </div>
-        ))
-      )}
+          <h2>Sent</h2>
+          {account.sent.length === 0 ? (
+            <p className="empty">No tips sent yet.</p>
+          ) : (
+            account.sent.map((s, i) => (
+              <div className="tx" key={i}>
+                <Coin symbol={s.token} logo={s.logo} />
+                <div className="tx-body">
+                  <div className="tx-line">
+                    <span className="tx-amt">{s.amount}</span>
+                    <span className="tx-sym">{s.token}</span>
+                    <span className="tx-to">to {s.to ? `@${s.to}` : 'an unregistered account'}</span>
+                  </div>
+                  <div className="tx-sub">{new Date(s.at).toLocaleDateString()} · delivered</div>
+                </div>
+                {s.signature && (
+                  <div className="tx-right">
+                    <a
+                      href={`https://solscan.io/tx/${s.signature}`}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="tx-sig mono"
+                    >
+                      {short(s.signature)}
+                    </a>
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
 
-      <h2>Sent</h2>
-      {account.sent.length === 0 ? (
-        <p className="empty">No tips sent yet.</p>
-      ) : (
-        account.sent.map((s, i) => (
-          <div className="row" key={i}>
-            <span className="row-main">
-              <span className="row-amt">
-                {s.amount} <span className="sym">{s.token}</span> to{' '}
-                {s.to ? `@${s.to}` : 'an unregistered account'}
-              </span>
-              <span className="row-sub">{new Date(s.at).toLocaleDateString()} · delivered</span>
-            </span>
-            {s.signature && (
-              <a
-                href={`https://solscan.io/tx/${s.signature}`}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="mono"
-                style={{ fontSize: '0.8rem' }}
-              >
-                {short(s.signature)}
-              </a>
+        {/* Right column: wallet */}
+        <div>
+          <h2 style={{ marginTop: 0 }}>Wallet</h2>
+          <div className="card">
+            <WalletButton />
+            {connectedButUnlinked && (
+              <>
+                <p className="muted" style={{ margin: '1rem 0 0.75rem' }}>
+                  Sign a short message to prove this wallet is yours. It authorizes no transfer and
+                  costs no fee.
+                </p>
+                <button className="btn btn-primary" onClick={linkWallet} disabled={busy}>
+                  {busy ? 'Waiting for your wallet…' : 'Prove ownership'}
+                </button>
+              </>
+            )}
+            {account.wallet && !publicKey && (
+              <p className="muted" style={{ marginTop: '1rem' }}>
+                {short(account.wallet)} is linked. Connect it again to sign anything.
+              </p>
             )}
           </div>
-        ))
-      )}
+        </div>
+      </div>
 
       <div className="foot">
         <span>XCrypto never holds your funds and can't spend them.</span>

@@ -38,7 +38,7 @@ export function securityHeaders(req: Request, res: Response, next: NextFunction)
           "script-src 'self'",
           "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
           "font-src 'self' https://fonts.gstatic.com",
-          "img-src 'self' data:",
+          "img-src 'self' data: https://raw.githubusercontent.com https://*.githubusercontent.com",
           // Wallet extensions and the Solana RPC endpoint are reached from the page.
           "connect-src 'self' " + (process.env.SOLANA_RPC_URL ?? '') + ' ' + (process.env.SOLANA_WS_URL ?? ''),
           "frame-ancestors 'none'",

@@ -43,6 +43,7 @@ export interface Account {
     to: string | null;
     amount: string;
     token: string;
+    logo: string | null;
     route: string;
     expiresAt: string;
   }>;
@@ -57,6 +58,7 @@ export interface Account {
     to: string | null;
     amount: string;
     token: string;
+    logo: string | null;
     route: string;
     signature: string | null;
     at: string;
@@ -92,6 +94,7 @@ export interface IntentView {
   to: string | null;
   amount: string;
   token: string;
+  logo: string | null;
   route: 'direct' | 'escrow';
   status: string;
   expiresAt: string;
