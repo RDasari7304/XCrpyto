@@ -59,6 +59,13 @@ export const TOKENS: TokenInfo[] = [
     transferFeeBps: 300, // 3% transfer fee (Token-2022)
     aliases: ['zcat', '$zcat'],
   },
+  {
+    symbol: 'ANSEM',
+    name: 'Ansem',
+    mint: new PublicKey('9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump'),
+    decimals: 6, // confirmed via solscan; no transfer fee
+    aliases: ['ansem', '$ansem'],
+  },
 ];
 
 const BY_ALIAS = new Map<string, TokenInfo>();
