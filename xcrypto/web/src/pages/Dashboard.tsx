@@ -243,12 +243,29 @@ export default function Dashboard() {
               <dd className="mono">{btc.result.ordinalsAddress ?? '—'}</dd>
             </div>
             <div>
+              <dt>Source</dt>
+              <dd className="mono">{btc.result.source}</dd>
+            </div>
+            <div>
               <dt>Raw</dt>
               <dd className="mono" style={{ fontSize: '0.7rem' }}>
                 {JSON.stringify(btc.result.raw)}
               </dd>
             </div>
           </dl>
+        )}
+        {btc.diagnostics.length > 0 && (
+          <pre
+            className="mono"
+            style={{
+              fontSize: 11,
+              opacity: 0.7,
+              whiteSpace: 'pre-wrap',
+              marginTop: 12,
+            }}
+          >
+            {btc.diagnostics.join('\n')}
+          </pre>
         )}
       </div>
 

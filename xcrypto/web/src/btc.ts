@@ -1,12 +1,13 @@
 import { useCallback, useState } from 'react';
+import { getWallets } from '@wallet-standard/app';
 
 /**
  * Bitcoin support — STEP 1, READ ONLY.
  *
  * Phantom deprecated window.phantom.bitcoin (June 2026). New builds expose BTC
- * only through the Bitcoin Wallet Standard, the same discovery mechanism used
- * for Solana wallets. We try wallet-standard first, then fall back to the
- * legacy injected provider for older Phantom builds. Moves no funds.
+ * only through the Bitcoin Wallet Standard, discovered via @wallet-standard/app.
+ * We try wallet-standard first, then fall back to the legacy injected provider
+ * for older Phantom builds. Moves no funds.
  */
 
 interface BtcAccount {
@@ -21,57 +22,38 @@ export interface BtcProbeResult {
   paymentAddress: string | null;
   ordinalsAddress: string | null;
   source: 'wallet-standard' | 'legacy';
+  diagnostics: string[];
 }
 
 // ---- wallet-standard path -------------------------------------------------
 
-interface StandardWallet {
-  name: string;
-  chains: readonly string[];
-  features: Record<string, any>;
-  accounts: readonly {
-    address: string;
-    publicKey?: Uint8Array;
-    chains: readonly string[];
-    features: readonly string[];
-  }[];
-}
+async function probeViaWalletStandard(diag: string[]): Promise<BtcProbeResult | null> {
+  const { get } = getWallets();
+  const wallets = get();
 
-function getStandardWallets(): StandardWallet[] {
-  const registered: StandardWallet[] = [];
+  diag.push(`wallet-standard: ${wallets.length} wallet(s) registered`);
+  for (const w of wallets) {
+    diag.push(
+      `  • ${w.name} — chains: [${w.chains.join(', ') || 'none'}] — features: [${Object.keys(w.features).join(', ')}]`,
+    );
+  }
 
-  // Ask any already-loaded wallet-standard wallets to announce themselves.
-  const listener = (e: any) => {
-    if (e?.detail?.register) {
-      e.detail.register((wallet: StandardWallet) => {
-        registered.push(wallet);
-        return () => {};
-      });
-    }
-  };
-  window.addEventListener('wallet-standard:app-ready', listener);
-  window.dispatchEvent(new Event('wallet-standard:app-ready'));
-  window.removeEventListener('wallet-standard:app-ready', listener);
-
-  // Some builds also expose a shared registry on navigator.
-  const existing = (window as any).navigator?.wallets?.get?.() ?? [];
-  return [...registered, ...existing];
-}
-
-async function probeViaWalletStandard(): Promise<BtcProbeResult | null> {
-  const wallets = getStandardWallets();
   const phantom = wallets.find(
-    (w) =>
-      w.name === 'Phantom' && w.chains.some((c) => c.startsWith('bitcoin:')),
+    (w) => w.name === 'Phantom' && w.chains.some((c) => c.startsWith('bitcoin:')),
   );
-  if (!phantom) return null;
+  if (!phantom) {
+    diag.push('wallet-standard: no Phantom wallet with a bitcoin: chain');
+    return null;
+  }
 
-  const connect = phantom.features['standard:connect'];
+  const connect = (phantom.features as any)['standard:connect'];
   if (!connect?.connect) {
-    throw new Error('Phantom wallet found but has no connect feature');
+    diag.push('wallet-standard: Phantom is registered but exposes no standard:connect feature');
+    return null;
   }
 
   const { accounts } = await connect.connect();
+  diag.push(`wallet-standard: Phantom returned ${accounts.length} account(s) after connect`);
 
   const btcAccounts: BtcAccount[] = accounts
     .filter((a: any) => a.chains.some((c: string) => c.startsWith('bitcoin:')))
@@ -82,8 +64,11 @@ async function probeViaWalletStandard(): Promise<BtcProbeResult | null> {
       purpose: inferPurpose(a.address),
     }));
 
-  if (btcAccounts.length === 0) return null;
-  return buildResult(btcAccounts, 'wallet-standard');
+  if (btcAccounts.length === 0) {
+    diag.push('wallet-standard: none of Phantom’s accounts are on a bitcoin: chain');
+    return null;
+  }
+  return buildResult(btcAccounts, 'wallet-standard', diag);
 }
 
 // ---- legacy injected path (older Phantom builds) --------------------------
@@ -92,12 +77,20 @@ interface LegacyBtcProvider {
   requestAccounts(): Promise<BtcAccount[]>;
 }
 
-async function probeViaLegacy(): Promise<BtcProbeResult | null> {
+async function probeViaLegacy(diag: string[]): Promise<BtcProbeResult | null> {
   const p = (window as any).phantom?.bitcoin as LegacyBtcProvider | undefined;
-  if (!p) return null;
+  if (!p) {
+    diag.push('legacy: window.phantom.bitcoin is undefined');
+    return null;
+  }
+  diag.push('legacy: window.phantom.bitcoin is present — calling requestAccounts()');
   const accounts = await p.requestAccounts();
-  if (!Array.isArray(accounts) || accounts.length === 0) return null;
-  return buildResult(accounts, 'legacy');
+  if (!Array.isArray(accounts) || accounts.length === 0) {
+    diag.push('legacy: requestAccounts returned no accounts');
+    return null;
+  }
+  diag.push(`legacy: got ${accounts.length} account(s)`);
+  return buildResult(accounts, 'legacy', diag);
 }
 
 // ---- shared helpers -------------------------------------------------------
@@ -105,6 +98,7 @@ async function probeViaLegacy(): Promise<BtcProbeResult | null> {
 function buildResult(
   accounts: BtcAccount[],
   source: BtcProbeResult['source'],
+  diag: string[],
 ): BtcProbeResult {
   const payment =
     accounts.find((a) => a.purpose === 'payment') ??
@@ -119,6 +113,7 @@ function buildResult(
     paymentAddress: payment?.address ?? null,
     ordinalsAddress: ordinals?.address ?? null,
     source,
+    diagnostics: diag,
   };
 }
 
@@ -147,25 +142,40 @@ export function useBtcProbe() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<BtcProbeResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [diagnostics, setDiagnostics] = useState<string[]>([]);
 
   const run = useCallback(async () => {
     setError(null);
     setResult(null);
+    setDiagnostics([]);
     setBusy(true);
+    const diag: string[] = [];
     try {
-      const std = await probeViaWalletStandard();
-      if (std) return setResult(std);
-      const legacy = await probeViaLegacy();
-      if (legacy) return setResult(legacy);
+      const std = await probeViaWalletStandard(diag);
+      if (std) {
+        setDiagnostics(diag);
+        return setResult(std);
+      }
+      const legacy = await probeViaLegacy(diag);
+      if (legacy) {
+        setDiagnostics(diag);
+        return setResult(legacy);
+      }
+      setDiagnostics(diag);
+      // eslint-disable-next-line no-console
+      console.log('[btc probe] diagnostics:\n' + diag.join('\n'));
       throw new Error(
-        'Phantom did not expose Bitcoin. Confirm Bitcoin is enabled in Phantom (Settings → Manage Networks → Bitcoin), unlock the wallet, and reload.',
+        'Phantom did not expose Bitcoin. See diagnostics below (and the browser console).',
       );
     } catch (err: any) {
+      setDiagnostics(diag);
+      // eslint-disable-next-line no-console
+      console.log('[btc probe] diagnostics:\n' + diag.join('\n'));
       setError(err?.message ?? 'Bitcoin probe failed');
     } finally {
       setBusy(false);
     }
   }, []);
 
-  return { run, busy, result, error };
+  return { run, busy, result, error, diagnostics };
 }
