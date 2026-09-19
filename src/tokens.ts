@@ -92,6 +92,15 @@ export const TOKENS: TokenInfo[] = [
     decimals: 18, // confirmed on-chain via eth_call decimals()
     aliases: ['ai', '$ai'],
   },
+  {
+    symbol: 'CASHCAT',
+    name: 'Cash Cat',
+    chain: 'robinhood',
+    mint: null,
+    contract: '0x020bfc650a365f8bb26819deaabf3e21291018b4',
+    decimals: 18, // per user; confirm on blockscout, and that it's a standard ERC-20
+    aliases: ['cashcat', '$cashcat'],
+  },
 ];
 
 const BY_ALIAS = new Map<string, TokenInfo>();
