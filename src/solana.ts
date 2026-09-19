@@ -257,35 +257,51 @@ export async function creditDestination(
  * Confirm on-chain that a signature actually did what the intent claimed.
  * The client tells us a signature; the chain tells us the truth.
  *
- * For SOL, the destination is a wallet and we compare its lamport balance.
- * For SPL, the destination is a token account and lamports don't change on a
- * token transfer — so we compare the token balances in meta instead.
+ * For SOL we compare the destination wallet's lamport balance.
+ *
+ * For SPL we do NOT try to resolve the recipient's token-account index (that
+ * account may be created in the same transaction, or live in a lookup table,
+ * and index matching is fragile — this produced false "did not land" errors on
+ * transfers that actually succeeded). Instead we read the transaction's
+ * pre/post TOKEN balances, which the RPC tags with mint + owner directly, and
+ * check that the recipient owner's balance of this mint rose by the amount.
  */
-export async function verifyCredit(
-  signature: string,
-  destination: PublicKey,
-  amount: bigint,
-  isSpl = false,
-): Promise<boolean> {
-  const tx = await connection.getTransaction(signature, {
+export async function verifyCredit(opts: {
+  signature: string;
+  amount: bigint;
+  // SOL:
+  destination?: PublicKey;
+  // SPL:
+  mint?: PublicKey;
+  ownerWallet?: PublicKey;
+}): Promise<boolean> {
+  const tx = await connection.getTransaction(opts.signature, {
     commitment: 'confirmed',
     maxSupportedTransactionVersion: 0,
   });
   if (!tx || tx.meta?.err) return false;
 
-  const keys = tx.transaction.message.getAccountKeys().staticAccountKeys;
-  const index = keys.findIndex((k) => k.equals(destination));
-  if (index < 0) return false;
-
-  if (isSpl) {
-    const pre = tx.meta!.preTokenBalances?.find((b) => b.accountIndex === index);
-    const post = tx.meta!.postTokenBalances?.find((b) => b.accountIndex === index);
+  // SPL: match on mint + owner, no index resolution.
+  if (opts.mint && opts.ownerWallet) {
+    const mint = opts.mint.toBase58();
+    const owner = opts.ownerWallet.toBase58();
+    const match = (b: { mint: string; owner?: string }) => b.mint === mint && b.owner === owner;
+    const pre = tx.meta?.preTokenBalances?.find(match);
+    const post = tx.meta?.postTokenBalances?.find(match);
     const preAmt = BigInt(pre?.uiTokenAmount.amount ?? '0');
     const postAmt = BigInt(post?.uiTokenAmount.amount ?? '0');
-    return postAmt - preAmt >= amount;
+    return postAmt - preAmt >= opts.amount;
   }
 
-  const pre = BigInt(tx.meta!.preBalances[index]);
-  const post = BigInt(tx.meta!.postBalances[index]);
-  return post - pre >= amount;
+  // SOL: compare the destination wallet's lamport balance.
+  if (opts.destination) {
+    const keys = tx.transaction.message.getAccountKeys().staticAccountKeys;
+    const index = keys.findIndex((k) => k.equals(opts.destination!));
+    if (index < 0) return false;
+    const pre = BigInt(tx.meta!.preBalances[index]);
+    const post = BigInt(tx.meta!.postBalances[index]);
+    return post - pre >= opts.amount;
+  }
+
+  return false;
 }

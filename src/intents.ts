@@ -8,7 +8,6 @@ import {
   recipientXHash,
   transferIx,
   splTransferIxs,
-  creditDestination,
   verifyCredit,
 } from './solana.js';
 import { tokenBySymbol, fromBaseUnits, type TokenInfo } from './tokens.js';
@@ -200,18 +199,36 @@ export async function confirmIntent(
   const token = intentToken(intent);
   const amount = BigInt(intent.lamports);
 
-  let destination: PublicKey;
+  let ok: boolean;
+  let escrowDestination: PublicKey | null = null;
+
   if (intent.route === 'direct') {
-    destination = await creditDestination(new PublicKey(intent.recipient_wallet!), token);
+    if (token.mint) {
+      // SPL: verify the recipient wallet's balance of this mint rose.
+      ok = await verifyCredit({
+        signature,
+        amount,
+        mint: token.mint,
+        ownerWallet: new PublicKey(intent.recipient_wallet!),
+      });
+    } else {
+      // Native SOL to the recipient wallet.
+      ok = await verifyCredit({
+        signature,
+        amount,
+        destination: new PublicKey(intent.recipient_wallet!),
+      });
+    }
   } else {
-    destination = escrowPda(
+    // Escrow route is SOL-only; destination is the PDA.
+    escrowDestination = escrowPda(
       new PublicKey(senderWallet),
       recipientXHash(intent.recipient_x_user_id),
       BigInt(intent.escrow_nonce!),
     );
+    ok = await verifyCredit({ signature, amount, destination: escrowDestination });
   }
 
-  const ok = await verifyCredit(signature, destination, amount, token.mint !== null);
   if (!ok) throw new IntentError('That transaction did not land as described.');
 
   await db.query(
@@ -232,7 +249,7 @@ export async function confirmIntent(
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now() + ($9 || ' days')::interval)
        ON CONFLICT (pda) DO NOTHING`,
       [
-        destination.toBase58(),
+        escrowDestination!.toBase58(),
         intent.id,
         senderWallet,
         rows[0]?.x_handle ?? null,
