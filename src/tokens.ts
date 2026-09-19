@@ -13,18 +13,26 @@ import { PublicKey } from '@solana/web3.js';
  * NOTE: the mints below are Solana MAINNET addresses. On devnet these tokens
  * either don't exist or use different mints, so SPL tips only work on mainnet.
  */
+export type Chain = 'solana' | 'robinhood';
+
 export interface TokenInfo {
   symbol: string;
   name: string;
-  /** null for native SOL; a mint address for SPL tokens. */
+  /** which blockchain this token lives on */
+  chain: Chain;
+  /**
+   * Solana: mint address (null = native SOL).
+   * Robinhood (EVM): ERC-20 contract address (null = native ETH gas token).
+   */
   mint: PublicKey | null;
+  /** EVM contract address for robinhood-chain tokens (0x…). */
+  contract?: string;
   decimals: number;
   /** extra spellings the parser should accept, lowercase. */
   aliases: string[];
   /**
    * Transfer fee in basis points, for Token-2022 tokens that take a cut on
-   * every transfer (e.g. ZCAT is 300 = 3%). Used to verify the recipient
-   * received the expected post-fee amount. Omit or 0 for no fee.
+   * every transfer (e.g. ZCAT is 300 = 3%). Solana-only.
    */
   transferFeeBps?: number;
   /** Coin image URL for the UI. Falls back to a monogram badge if absent/broken. */
@@ -35,6 +43,7 @@ export const TOKENS: TokenInfo[] = [
   {
     symbol: 'SOL',
     name: 'Solana',
+    chain: 'solana',
     mint: null,
     decimals: 9,
     aliases: ['sol', 'solana', '$sol'],
@@ -43,6 +52,7 @@ export const TOKENS: TokenInfo[] = [
   {
     symbol: 'USDC',
     name: 'USD Coin',
+    chain: 'solana',
     mint: new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'),
     decimals: 6,
     aliases: ['usdc', '$usdc', 'usd'],
@@ -51,6 +61,7 @@ export const TOKENS: TokenInfo[] = [
   {
     symbol: 'CATE',
     name: 'Cate',
+    chain: 'solana',
     mint: new PublicKey('Ai66LHZG9MCzg1WKdawwqduVAXpNDUuV8M3uyq5ppump'),
     decimals: 6, // confirmed via solscan
     aliases: ['cate', '$cate'],
@@ -58,6 +69,7 @@ export const TOKENS: TokenInfo[] = [
   {
     symbol: 'ZCAT',
     name: 'ZCat',
+    chain: 'solana',
     mint: new PublicKey('HcRLc9VDgjLeK154xDawfb1dmVJ98DoSqcwTHGqiDeJR'),
     decimals: 9,
     transferFeeBps: 300, // 3% transfer fee (Token-2022)
@@ -66,9 +78,19 @@ export const TOKENS: TokenInfo[] = [
   {
     symbol: 'ANSEM',
     name: 'Ansem',
+    chain: 'solana',
     mint: new PublicKey('9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump'),
     decimals: 6, // confirmed via solscan; no transfer fee
     aliases: ['ansem', '$ansem'],
+  },
+  {
+    symbol: 'AI',
+    name: 'Artificial Inu',
+    chain: 'robinhood',
+    mint: null,
+    contract: '0x2e8c31162b855a2ffa90f6f8634643ad6f111e18',
+    decimals: 18, // confirmed on-chain via eth_call decimals()
+    aliases: ['ai', '$ai'],
   },
 ];
 

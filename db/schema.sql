@@ -8,11 +8,15 @@ CREATE TABLE IF NOT EXISTS users (
   id            BIGSERIAL PRIMARY KEY,
   x_user_id     TEXT NOT NULL UNIQUE,   -- numeric X id; handles get renamed and resold
   x_handle      TEXT,
-  wallet        TEXT,                   -- base58 pubkey the user proved control of
+  wallet        TEXT,                   -- base58 Solana pubkey the user proved control of
   wallet_verified_at TIMESTAMPTZ,
+  evm_wallet    TEXT,                   -- 0x… address for Robinhood Chain (EVM)
+  evm_verified_at TIMESTAMPTZ,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS users_wallet_idx ON users(wallet) WHERE wallet IS NOT NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS evm_wallet TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS evm_verified_at TIMESTAMPTZ;
 
 -- Sessions store only a hash of the cookie token, so a database dump does not
 -- hand over live sessions.
@@ -54,6 +58,7 @@ CREATE TABLE IF NOT EXISTS tip_intents (
   lamports           BIGINT NOT NULL CHECK (lamports > 0),  -- base units of the token
   token_symbol       TEXT NOT NULL DEFAULT 'SOL',
   token_mint         TEXT,              -- null for native SOL
+  chain              TEXT NOT NULL DEFAULT 'solana',  -- solana | robinhood
   route              TEXT NOT NULL,     -- direct | escrow
   status             TEXT NOT NULL DEFAULT 'awaiting_approval',
                                         -- awaiting_approval | submitted | confirmed | expired | cancelled
@@ -67,6 +72,7 @@ CREATE TABLE IF NOT EXISTS tip_intents (
 );
 ALTER TABLE tip_intents ADD COLUMN IF NOT EXISTS token_symbol TEXT NOT NULL DEFAULT 'SOL';
 ALTER TABLE tip_intents ADD COLUMN IF NOT EXISTS token_mint TEXT;
+ALTER TABLE tip_intents ADD COLUMN IF NOT EXISTS chain TEXT NOT NULL DEFAULT 'solana';
 CREATE INDEX IF NOT EXISTS intents_sender_idx ON tip_intents(sender_user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS intents_recipient_idx ON tip_intents(recipient_x_user_id)
   WHERE route = 'escrow';

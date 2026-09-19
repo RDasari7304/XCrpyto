@@ -123,3 +123,95 @@ export function useEvmVerify() {
 
   return { run, busy, result, error };
 }
+
+/**
+ * EVM transfer layer for Robinhood Chain. These are the functions the
+ * mention→approve flow calls to send on chain 4663; the dashboard test panel
+ * calls the exact same code so the money-moving path is exercised in isolation
+ * before a real mention triggers it.
+ *
+ * Native ETH transfer: eth_sendTransaction with a value.
+ * ERC-20 transfer: eth_sendTransaction to the contract with encoded
+ *   transfer(address,uint256) calldata (selector 0xa9059cbb).
+ * Confirmation: poll eth_getTransactionReceipt until it has a block and
+ *   status 0x1 (success).
+ */
+
+function pad32(hexNo0x: string): string {
+  return hexNo0x.padStart(64, '0');
+}
+
+/** Encode ERC-20 transfer(to, amount) calldata. */
+function encodeErc20Transfer(to: string, amount: bigint): string {
+  const selector = 'a9059cbb';
+  const addr = pad32(to.toLowerCase().replace(/^0x/, ''));
+  const amt = pad32(amount.toString(16));
+  return '0x' + selector + addr + amt;
+}
+
+export interface EvmSendParams {
+  from: string;
+  to: string;
+  amount: bigint; // base units (wei for ETH, token base units for ERC-20)
+  contract?: string; // ERC-20 contract; omit for native ETH
+}
+
+/** Build + send a transfer, returning the tx hash. Requires user signature. */
+export async function evmSend(params: EvmSendParams): Promise<string> {
+  const p = evmProvider();
+  if (!p) throw new Error('No EVM wallet found');
+
+  // Make sure we're on Robinhood Chain before signing.
+  await ensureChain(p);
+  const chainHex: string = await p.request({ method: 'eth_chainId' });
+  if (parseInt(chainHex, 16) !== ROBINHOOD_CHAIN.chainIdDec) {
+    throw new Error('Wallet is not on Robinhood Chain');
+  }
+
+  const tx: Record<string, string> = { from: params.from };
+  if (params.contract) {
+    tx.to = params.contract;
+    tx.value = '0x0';
+    tx.data = encodeErc20Transfer(params.to, params.amount);
+  } else {
+    tx.to = params.to;
+    tx.value = '0x' + params.amount.toString(16);
+  }
+
+  const hash: string = await p.request({ method: 'eth_sendTransaction', params: [tx] });
+  return hash;
+}
+
+/** Poll for the receipt until confirmed. Throws on revert or timeout. */
+export async function evmConfirm(hash: string, timeoutMs = 90_000): Promise<void> {
+  const p = evmProvider();
+  if (!p) throw new Error('No EVM wallet found');
+  const start = Date.now();
+  for (;;) {
+    const receipt = await p.request({ method: 'eth_getTransactionReceipt', params: [hash] });
+    if (receipt && receipt.blockNumber) {
+      if (receipt.status === '0x1') return;
+      throw new Error('Transaction reverted on chain');
+    }
+    if (Date.now() - start > timeoutMs) throw new Error('Timed out waiting for confirmation');
+    await new Promise((r) => setTimeout(r, 2500));
+  }
+}
+
+/** Read an ERC-20 balance for an address (base units). */
+export async function evmErc20Balance(contract: string, address: string): Promise<bigint> {
+  const p = evmProvider();
+  if (!p) throw new Error('No EVM wallet found');
+  const data = '0x70a08231' + pad32(address.toLowerCase().replace(/^0x/, '')); // balanceOf(address)
+  const res: string = await p.request({ method: 'eth_call', params: [{ to: contract, data }, 'latest'] });
+  return BigInt(res);
+}
+
+export function currentEvmAddress(): Promise<string | null> {
+  const p = evmProvider();
+  if (!p) return Promise.resolve(null);
+  return p
+    .request({ method: 'eth_accounts' })
+    .then((a: string[]) => a[0] ?? null)
+    .catch(() => null);
+}
