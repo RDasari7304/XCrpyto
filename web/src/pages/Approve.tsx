@@ -52,10 +52,10 @@ export default function Approve() {
     setError(null);
     setSending(true);
     try {
-      if (intent && intent.chain === 'robinhood') {
+      if (intent && (intent.chain === 'robinhood' || intent.chain === 'bsc')) {
         // EVM path: build + sign + broadcast client-side, then report the hash.
-        if (!intent.recipientWallet || !intent.contract) {
-          throw new Error('Recipient has no Robinhood Chain wallet linked.');
+        if (!intent.recipientWallet) {
+          throw new Error('Recipient has no wallet linked for this chain.');
         }
         const from = (await currentEvmAddress()) ?? (await evmConnect());
         // Exact base-unit amount from the server — no lossy decimal re-parsing.
@@ -64,7 +64,8 @@ export default function Approve() {
           from,
           to: intent.recipientWallet,
           amount,
-          contract: intent.contract,
+          contract: intent.contract ?? undefined,
+          chainKey: intent.chain,
         });
         await evmConfirm(hash);
         await confirmIntent(id, hash);

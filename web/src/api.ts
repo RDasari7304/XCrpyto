@@ -103,7 +103,7 @@ export interface IntentView {
   amount: string;
   token: string;
   logo: string | null;
-  chain: 'solana' | 'robinhood';
+  chain: 'solana' | 'robinhood' | 'bsc';
   contract: string | null;
   amountBase: string;
   route: 'direct' | 'escrow';

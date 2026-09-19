@@ -1,7 +1,7 @@
 import { config, db } from './config.js';
 import { parseCommand, validateTipAmount } from './commands.js';
 import { createIntent } from './intents.js';
-import { fromBaseUnits } from './tokens.js';
+import { fromBaseUnits, isEvmChain } from './tokens.js';
 import { fetchMentions, lookupHandle, reply, RateLimited, type Mention } from './x.js';
 import { rateLimit } from './security.js';
 
@@ -88,7 +88,7 @@ async function handleMention(m: Mention): Promise<void> {
     [m.authorId],
   );
   const senderRow = rows[0];
-  const needsEvm = cmd.token.chain === 'robinhood';
+  const needsEvm = isEvmChain(cmd.token.chain);
   if (!senderRow) {
     await reply(m.id, `Connect a wallet first at ${config.webOrigin} — takes a minute, then this will work.`);
     return;

@@ -10,8 +10,8 @@ import {
   splTransferIxs,
   verifyCredit,
 } from './solana.js';
-import { tokenBySymbol, fromBaseUnits, type TokenInfo } from './tokens.js';
-import { verifyEvmErc20Transfer } from './evm-verify.js';
+import { tokenBySymbol, fromBaseUnits, isEvmChain, EVM_CHAINS, type TokenInfo } from './tokens.js';
+import { verifyEvmErc20Transfer, verifyEvmNativeTransfer } from './evm-verify.js';
 
 export interface Intent {
   id: string;
@@ -22,7 +22,7 @@ export interface Intent {
   lamports: string; // base units of the token
   token_symbol: string;
   token_mint: string | null;
-  chain: 'solana' | 'robinhood';
+  chain: 'solana' | 'robinhood' | 'bsc';
   route: 'direct' | 'escrow';
   status: string;
   escrow_nonce: string | null;
@@ -62,10 +62,10 @@ export async function createIntent(opts: {
   token: TokenInfo;
   sourceTweetId: string;
 }): Promise<Intent | null | 'recipient_not_registered' | 'spl_needs_wallet' | 'evm_needs_wallet'> {
-  const isEvm = opts.token.chain === 'robinhood';
+  const isEvm = isEvmChain(opts.token.chain);
 
   if (isEvm) {
-    // AI etc. settle to the recipient's linked EVM (0x) address, not Solana.
+    // EVM tokens settle to the recipient's linked EVM (0x) address, not Solana.
     const { rows } = await db.query<{ evm_wallet: string | null }>(
       `SELECT evm_wallet FROM users WHERE x_user_id = $1 AND evm_wallet IS NOT NULL`,
       [opts.recipientXUserId],
@@ -77,8 +77,8 @@ export async function createIntent(opts: {
       `INSERT INTO tip_intents
          (sender_user_id, recipient_x_user_id, recipient_x_handle, recipient_wallet,
           lamports, token_symbol, token_mint, chain, route, source_tweet_id, expires_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, 'robinhood', 'direct', $8,
-               now() + ($9 || ' minutes')::interval)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'direct', $9,
+               now() + ($10 || ' minutes')::interval)
        ON CONFLICT (source_tweet_id) DO NOTHING
        RETURNING *`,
       [
@@ -89,6 +89,7 @@ export async function createIntent(opts: {
         opts.amount.toString(),
         opts.token.symbol,
         opts.token.contract ?? null,
+        opts.token.chain,
         opts.sourceTweetId,
         String(config.limits.intentTtlMinutes),
       ],
@@ -164,7 +165,7 @@ export async function buildIntentTransaction(
   const token = intentToken(intent);
   const amount = BigInt(intent.lamports);
 
-  if (token.chain === 'robinhood') {
+  if (isEvmChain(token.chain)) {
     // EVM transactions are built and signed client-side via the wallet's EVM
     // provider (see the approval page). There's no server-built blob here.
     throw new IntentError('Use the EVM signing path for this token.');
@@ -244,14 +245,27 @@ export async function confirmIntent(
 
   // Robinhood Chain (EVM): verify the tx hash against the Robinhood RPC — the
   // ERC-20 Transfer log must show `amount` reaching the recipient's EVM wallet.
-  if (token.chain === 'robinhood') {
-    if (!token.contract) throw new IntentError('Missing token contract');
-    const ok = await verifyEvmErc20Transfer({
-      txHash: signature,
-      contract: token.contract,
-      recipient: intent.recipient_wallet!, // stored EVM 0x address for robinhood intents
-      amount,
-    });
+  if (isEvmChain(token.chain)) {
+    const chainInfo = EVM_CHAINS[token.chain];
+    const recipient = intent.recipient_wallet!; // stored EVM 0x address
+    let ok: boolean;
+    if (token.contract) {
+      ok = await verifyEvmErc20Transfer({
+        rpcUrl: chainInfo.rpcUrl,
+        txHash: signature,
+        contract: token.contract,
+        recipient,
+        amount,
+      });
+    } else {
+      // Native gas-token transfer (BNB / ETH).
+      ok = await verifyEvmNativeTransfer({
+        rpcUrl: chainInfo.rpcUrl,
+        txHash: signature,
+        recipient,
+        amount,
+      });
+    }
     if (!ok) throw new IntentError('That transaction did not land as described.');
     await db.query(
       `UPDATE tip_intents SET status = 'confirmed', tx_signature = $2, confirmed_at = now()

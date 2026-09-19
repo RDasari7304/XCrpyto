@@ -387,7 +387,7 @@ app.post('/api/intents/:id/confirm', requireAuth, requireCsrf, limiter('confirm'
   if (!intent) return fail(res, 404, 'Tip request not found');
   // EVM (robinhood) confirmation verifies against the chain and doesn't use the
   // Solana wallet; only require a Solana wallet for Solana intents.
-  if (intent.chain !== 'robinhood' && !req.user!.wallet) {
+  if (intent.chain === 'solana' && !req.user!.wallet) {
     return fail(res, 400, 'Connect a wallet first');
   }
   try {

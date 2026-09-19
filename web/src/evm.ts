@@ -13,15 +13,36 @@ import { useCallback, useState } from 'react';
  * than assumptions.
  */
 
-export const ROBINHOOD_CHAIN = {
-  chainIdDec: 4663,
-  chainIdHex: '0x1237', // 4663
-  name: 'Robinhood Chain',
-  rpcUrl: 'https://rpc.mainnet.chain.robinhood.com',
-  // Explorer + native currency name are filled in from what the chain reports;
-  // we don't hardcode the gas symbol because that's one of the things we verify.
-  explorer: 'https://robinhoodchain.blockscout.com',
+export interface EvmChainConfig {
+  chainIdDec: number;
+  chainIdHex: string;
+  name: string;
+  rpcUrl: string;
+  explorer: string;
+  nativeCurrency: { name: string; symbol: string; decimals: number };
+}
+
+export const EVM_CHAINS: Record<string, EvmChainConfig> = {
+  robinhood: {
+    chainIdDec: 4663,
+    chainIdHex: '0x1237',
+    name: 'Robinhood Chain',
+    rpcUrl: 'https://rpc.mainnet.chain.robinhood.com',
+    explorer: 'https://robinhoodchain.blockscout.com',
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  },
+  bsc: {
+    chainIdDec: 56,
+    chainIdHex: '0x38',
+    name: 'BNB Smart Chain',
+    rpcUrl: 'https://bsc-dataseed.binance.org',
+    explorer: 'https://bscscan.com',
+    nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
+  },
 };
+
+// Back-compat alias used by the read-only verify panel (Robinhood).
+export const ROBINHOOD_CHAIN = EVM_CHAINS.robinhood;
 
 interface EvmProvider {
   request(args: { method: string; params?: unknown[] }): Promise<any>;
@@ -35,9 +56,9 @@ function evmProvider(): EvmProvider | null {
 }
 
 /** Ask the wallet to switch to Robinhood Chain, adding it if unknown. */
-async function ensureChain(p: EvmProvider): Promise<void> {
+async function ensureChain(p: EvmProvider, cfg: EvmChainConfig = ROBINHOOD_CHAIN): Promise<void> {
   try {
-    await p.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: ROBINHOOD_CHAIN.chainIdHex }] });
+    await p.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: cfg.chainIdHex }] });
   } catch (err: any) {
     // 4902 = chain not added to the wallet yet; add it, then it's selected.
     if (err?.code === 4902 || /Unrecognized chain/i.test(String(err?.message))) {
@@ -45,14 +66,14 @@ async function ensureChain(p: EvmProvider): Promise<void> {
         method: 'wallet_addEthereumChain',
         params: [
           {
-            chainId: ROBINHOOD_CHAIN.chainIdHex,
-            chainName: ROBINHOOD_CHAIN.name,
-            rpcUrls: [ROBINHOOD_CHAIN.rpcUrl],
-            blockExplorerUrls: [ROBINHOOD_CHAIN.explorer],
+            chainId: cfg.chainIdHex,
+            chainName: cfg.name,
+            rpcUrls: [cfg.rpcUrl],
+            blockExplorerUrls: [cfg.explorer],
             // We must give the wallet a native currency to add the chain. If the
             // real gas token differs, the verification below reports it and we
             // correct this before building transfers.
-            nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+            nativeCurrency: cfg.nativeCurrency,
           },
         ],
       });
@@ -157,15 +178,16 @@ export interface EvmSendParams {
 }
 
 /** Build + send a transfer, returning the tx hash. Requires user signature. */
-export async function evmSend(params: EvmSendParams): Promise<string> {
+export async function evmSend(params: EvmSendParams & { chainKey?: string }): Promise<string> {
   const p = evmProvider();
   if (!p) throw new Error('No EVM wallet found');
 
-  // Make sure we're on Robinhood Chain before signing.
-  await ensureChain(p);
+  const cfg = EVM_CHAINS[params.chainKey ?? 'robinhood'] ?? ROBINHOOD_CHAIN;
+  // Make sure we're on the right chain before signing.
+  await ensureChain(p, cfg);
   const chainHex: string = await p.request({ method: 'eth_chainId' });
-  if (parseInt(chainHex, 16) !== ROBINHOOD_CHAIN.chainIdDec) {
-    throw new Error('Wallet is not on Robinhood Chain');
+  if (parseInt(chainHex, 16) !== cfg.chainIdDec) {
+    throw new Error(`Wallet is not on ${cfg.name}`);
   }
 
   const tx: Record<string, string> = { from: params.from };

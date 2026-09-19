@@ -13,7 +13,43 @@ import { PublicKey } from '@solana/web3.js';
  * NOTE: the mints below are Solana MAINNET addresses. On devnet these tokens
  * either don't exist or use different mints, so SPL tips only work on mainnet.
  */
-export type Chain = 'solana' | 'robinhood';
+export type Chain = 'solana' | 'robinhood' | 'bsc';
+
+/** EVM chain connection facts, keyed by our chain id string. */
+export interface EvmChainInfo {
+  chain: Chain;
+  chainIdDec: number;
+  chainIdHex: string;
+  name: string;
+  rpcUrl: string;
+  explorer: string;
+  nativeSymbol: string; // gas token
+}
+
+export const EVM_CHAINS: Record<string, EvmChainInfo> = {
+  robinhood: {
+    chain: 'robinhood',
+    chainIdDec: 4663,
+    chainIdHex: '0x1237',
+    name: 'Robinhood Chain',
+    rpcUrl: 'https://rpc.mainnet.chain.robinhood.com',
+    explorer: 'https://robinhoodchain.blockscout.com',
+    nativeSymbol: 'ETH',
+  },
+  bsc: {
+    chain: 'bsc',
+    chainIdDec: 56,
+    chainIdHex: '0x38',
+    name: 'BNB Smart Chain',
+    rpcUrl: 'https://bsc-dataseed.binance.org',
+    explorer: 'https://bscscan.com',
+    nativeSymbol: 'BNB',
+  },
+};
+
+export function isEvmChain(c: Chain): boolean {
+  return c === 'robinhood' || c === 'bsc';
+}
 
 export interface TokenInfo {
   symbol: string;
@@ -100,6 +136,42 @@ export const TOKENS: TokenInfo[] = [
     contract: '0x020bfc650a365f8bb26819deaabf3e21291018b4',
     decimals: 18, // per user; confirm on blockscout, and that it's a standard ERC-20
     aliases: ['cashcat', '$cashcat'],
+  },
+  {
+    symbol: 'BNB',
+    name: 'BNB',
+    chain: 'bsc',
+    mint: null,
+    // native gas token on BSC — no contract
+    decimals: 18,
+    aliases: ['bnb', '$bnb'],
+  },
+  {
+    symbol: 'MARSCOIN',
+    name: 'Marscoin',
+    chain: 'bsc',
+    mint: null,
+    contract: '0xFe189E97832DA1573e4e4Ff034F4fFC3a15c7777',
+    decimals: 18, // per user; confirm on bscscan + check for a transfer tax
+    aliases: ['marscoin', '$marscoin', 'mars'],
+  },
+  {
+    symbol: 'ASTER',
+    name: 'Aster',
+    chain: 'bsc',
+    mint: null,
+    contract: '0x000Ae314E2A2172a039B26378814C252734f556A',
+    decimals: 18, // per user; confirm on bscscan + check for a transfer tax
+    aliases: ['aster', '$aster'],
+  },
+  {
+    symbol: 'NIULAI',
+    name: '牛来',
+    chain: 'bsc',
+    mint: null,
+    contract: '0xBEEA1D618e533a387D941F58a7d4c9b7bD377777',
+    decimals: 18, // per user; confirm on bscscan + check for a transfer tax
+    aliases: ['niulai', '$niulai', '牛来'],
   },
 ];
 
