@@ -52,7 +52,7 @@ export default function Approve() {
     setError(null);
     setSending(true);
     try {
-      if (intent && (intent.chain === 'robinhood' || intent.chain === 'bsc')) {
+      if (intent && intent.chain !== 'solana') {
         // EVM path: build + sign + broadcast client-side, then report the hash.
         if (!intent.recipientWallet) {
           throw new Error('Recipient has no wallet linked for this chain.');

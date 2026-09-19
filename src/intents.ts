@@ -22,7 +22,7 @@ export interface Intent {
   lamports: string; // base units of the token
   token_symbol: string;
   token_mint: string | null;
-  chain: 'solana' | 'robinhood' | 'bsc';
+  chain: 'solana' | 'robinhood' | 'bsc' | 'ethereum' | 'polygon' | 'hyperevm';
   route: 'direct' | 'escrow';
   status: string;
   escrow_nonce: string | null;

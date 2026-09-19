@@ -13,7 +13,7 @@ import { PublicKey } from '@solana/web3.js';
  * NOTE: the mints below are Solana MAINNET addresses. On devnet these tokens
  * either don't exist or use different mints, so SPL tips only work on mainnet.
  */
-export type Chain = 'solana' | 'robinhood' | 'bsc';
+export type Chain = 'solana' | 'robinhood' | 'bsc' | 'ethereum' | 'polygon' | 'hyperevm';
 
 /** EVM chain connection facts, keyed by our chain id string. */
 export interface EvmChainInfo {
@@ -36,19 +36,48 @@ export const EVM_CHAINS: Record<string, EvmChainInfo> = {
     explorer: 'https://robinhoodchain.blockscout.com',
     nativeSymbol: 'ETH',
   },
-  bsc: {
-    chain: 'bsc',
-    chainIdDec: 56,
-    chainIdHex: '0x38',
-    name: 'BNB Smart Chain',
-    rpcUrl: 'https://bsc-dataseed.binance.org',
-    explorer: 'https://bscscan.com',
-    nativeSymbol: 'BNB',
+  // BSC disabled: Phantom does not support BNB Smart Chain, so it can't be
+  // signed through the app's wallet. Re-enable if wallet support is added.
+  // bsc: {
+  //   chain: 'bsc',
+  //   chainIdDec: 56,
+  //   chainIdHex: '0x38',
+  //   name: 'BNB Smart Chain',
+  //   rpcUrl: 'https://bsc-dataseed.binance.org',
+  //   explorer: 'https://bscscan.com',
+  //   nativeSymbol: 'BNB',
+  // },
+  ethereum: {
+    chain: 'ethereum',
+    chainIdDec: 1,
+    chainIdHex: '0x1',
+    name: 'Ethereum',
+    rpcUrl: 'https://eth-mainnet.g.alchemy.com/v2/alch_pczli91Av7of1yWJZcqK1',
+    explorer: 'https://etherscan.io',
+    nativeSymbol: 'ETH',
+  },
+  polygon: {
+    chain: 'polygon',
+    chainIdDec: 137,
+    chainIdHex: '0x89',
+    name: 'Polygon',
+    rpcUrl: 'https://polygon-rpc.com',
+    explorer: 'https://polygonscan.com',
+    nativeSymbol: 'POL',
+  },
+  hyperevm: {
+    chain: 'hyperevm',
+    chainIdDec: 999,
+    chainIdHex: '0x3e7',
+    name: 'HyperEVM',
+    rpcUrl: 'https://rpc.hyperliquid.xyz/evm',
+    explorer: 'https://hyperevmscan.io',
+    nativeSymbol: 'HYPE',
   },
 };
 
 export function isEvmChain(c: Chain): boolean {
-  return c === 'robinhood' || c === 'bsc';
+  return c === 'robinhood' || c === 'bsc' || c === 'ethereum' || c === 'polygon' || c === 'hyperevm';
 }
 
 export interface TokenInfo {
@@ -137,41 +166,49 @@ export const TOKENS: TokenInfo[] = [
     decimals: 18, // per user; confirm on blockscout, and that it's a standard ERC-20
     aliases: ['cashcat', '$cashcat'],
   },
+  // --- BSC disabled (Phantom lacks BNB Smart Chain support) ---
+  // {
+  //   symbol: 'BNB', name: 'BNB', chain: 'bsc', mint: null, decimals: 18,
+  //   aliases: ['bnb', '$bnb'],
+  // },
+  // {
+  //   symbol: 'MARSCOIN', name: 'Marscoin', chain: 'bsc', mint: null,
+  //   contract: '0xFe189E97832DA1573e4e4Ff034F4fFC3a15c7777', decimals: 18,
+  //   aliases: ['marscoin', '$marscoin', 'mars'],
+  // },
+  // {
+  //   symbol: 'ASTER', name: 'Aster', chain: 'bsc', mint: null,
+  //   contract: '0x000Ae314E2A2172a039B26378814C252734f556A', decimals: 18,
+  //   aliases: ['aster', '$aster'],
+  // },
+  // {
+  //   symbol: 'NIULAI', name: '牛来', chain: 'bsc', mint: null,
+  //   contract: '0xBEEA1D618e533a387D941F58a7d4c9b7bD377777', decimals: 18,
+  //   aliases: ['niulai', '$niulai', '牛来'],
+  // },
   {
-    symbol: 'BNB',
-    name: 'BNB',
-    chain: 'bsc',
-    mint: null,
-    // native gas token on BSC — no contract
+    symbol: 'ETH',
+    name: 'Ethereum',
+    chain: 'ethereum',
+    mint: null, // native gas token — no contract
     decimals: 18,
-    aliases: ['bnb', '$bnb'],
+    aliases: ['eth', '$eth', 'ethereum', 'ether'],
   },
   {
-    symbol: 'MARSCOIN',
-    name: 'Marscoin',
-    chain: 'bsc',
-    mint: null,
-    contract: '0xFe189E97832DA1573e4e4Ff034F4fFC3a15c7777',
-    decimals: 18, // per user; confirm on bscscan + check for a transfer tax
-    aliases: ['marscoin', '$marscoin', 'mars'],
+    symbol: 'POL',
+    name: 'Polygon',
+    chain: 'polygon',
+    mint: null, // native gas token — no contract
+    decimals: 18,
+    aliases: ['pol', '$pol', 'matic', '$matic', 'polygon'],
   },
   {
-    symbol: 'ASTER',
-    name: 'Aster',
-    chain: 'bsc',
-    mint: null,
-    contract: '0x000Ae314E2A2172a039B26378814C252734f556A',
-    decimals: 18, // per user; confirm on bscscan + check for a transfer tax
-    aliases: ['aster', '$aster'],
-  },
-  {
-    symbol: 'NIULAI',
-    name: '牛来',
-    chain: 'bsc',
-    mint: null,
-    contract: '0xBEEA1D618e533a387D941F58a7d4c9b7bD377777',
-    decimals: 18, // per user; confirm on bscscan + check for a transfer tax
-    aliases: ['niulai', '$niulai', '牛来'],
+    symbol: 'HYPE',
+    name: 'Hyperliquid',
+    chain: 'hyperevm',
+    mint: null, // native gas token on HyperEVM — no contract
+    decimals: 18,
+    aliases: ['hype', '$hype'],
   },
 ];
 

@@ -31,13 +31,30 @@ export const EVM_CHAINS: Record<string, EvmChainConfig> = {
     explorer: 'https://robinhoodchain.blockscout.com',
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
   },
-  bsc: {
-    chainIdDec: 56,
-    chainIdHex: '0x38',
-    name: 'BNB Smart Chain',
-    rpcUrl: 'https://bsc-dataseed.binance.org',
-    explorer: 'https://bscscan.com',
-    nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
+  // bsc disabled — Phantom lacks BNB Smart Chain support.
+  ethereum: {
+    chainIdDec: 1,
+    chainIdHex: '0x1',
+    name: 'Ethereum',
+    rpcUrl: 'https://eth-mainnet.g.alchemy.com/v2/alch_pczli91Av7of1yWJZcqK1',
+    explorer: 'https://etherscan.io',
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+  },
+  polygon: {
+    chainIdDec: 137,
+    chainIdHex: '0x89',
+    name: 'Polygon',
+    rpcUrl: 'https://polygon-rpc.com',
+    explorer: 'https://polygonscan.com',
+    nativeCurrency: { name: 'POL', symbol: 'POL', decimals: 18 },
+  },
+  hyperevm: {
+    chainIdDec: 999,
+    chainIdHex: '0x3e7',
+    name: 'HyperEVM',
+    rpcUrl: 'https://rpc.hyperliquid.xyz/evm',
+    explorer: 'https://hyperevmscan.io',
+    nativeCurrency: { name: 'HYPE', symbol: 'HYPE', decimals: 18 },
   },
 };
 
