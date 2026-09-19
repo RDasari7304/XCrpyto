@@ -141,6 +141,15 @@ export const TOKENS: TokenInfo[] = [
     aliases: ['zcat', '$zcat'],
   },
   {
+    symbol: 'STONK',
+    name: 'Stonk',
+    chain: 'solana',
+    mint: new PublicKey('6GmAFSYs4gk3FDao5FzzySQpPZaWsa4rUJHacpMpUNgx'),
+    decimals: 9,
+    transferFeeBps: 110, // 1.1% transfer fee (Token-2022)
+    aliases: ['stonk', '$stonk'],
+  },
+  {
     symbol: 'ANSEM',
     name: 'Ansem',
     chain: 'solana',
