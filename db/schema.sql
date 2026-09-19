@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS tip_intents (
   recipient_x_user_id TEXT NOT NULL,
   recipient_x_handle TEXT,
   recipient_wallet   TEXT,              -- set only when the recipient is registered
-  lamports           BIGINT NOT NULL CHECK (lamports > 0),  -- base units of the token
+  lamports           NUMERIC(78,0) NOT NULL CHECK (lamports > 0),  -- base units; NUMERIC holds 18-decimal EVM amounts
   token_symbol       TEXT NOT NULL DEFAULT 'SOL',
   token_mint         TEXT,              -- null for native SOL
   chain              TEXT NOT NULL DEFAULT 'solana',  -- solana | robinhood
@@ -73,6 +73,8 @@ CREATE TABLE IF NOT EXISTS tip_intents (
 ALTER TABLE tip_intents ADD COLUMN IF NOT EXISTS token_symbol TEXT NOT NULL DEFAULT 'SOL';
 ALTER TABLE tip_intents ADD COLUMN IF NOT EXISTS token_mint TEXT;
 ALTER TABLE tip_intents ADD COLUMN IF NOT EXISTS chain TEXT NOT NULL DEFAULT 'solana';
+ALTER TABLE tip_intents ALTER COLUMN lamports TYPE NUMERIC(78,0);
+ALTER TABLE escrows ALTER COLUMN lamports TYPE NUMERIC(78,0);
 CREATE INDEX IF NOT EXISTS intents_sender_idx ON tip_intents(sender_user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS intents_recipient_idx ON tip_intents(recipient_x_user_id)
   WHERE route = 'escrow';
@@ -86,7 +88,7 @@ CREATE TABLE IF NOT EXISTS escrows (
   sender_x_handle     TEXT,
   recipient_x_user_id TEXT NOT NULL,
   recipient_x_hash    TEXT NOT NULL,
-  lamports            BIGINT NOT NULL,
+  lamports            NUMERIC(78,0) NOT NULL,
   nonce               BIGINT NOT NULL,
   expires_at          TIMESTAMPTZ NOT NULL,
   status              TEXT NOT NULL DEFAULT 'funded', -- funded | claimed | refunded

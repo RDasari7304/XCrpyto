@@ -105,6 +105,13 @@ async function handleMention(m: Mention): Promise<void> {
     sourceTweetId: m.id,
   });
   const who = recipient.handle ? '@' + recipient.handle : 'They';
+  if (intent === 'chain_not_ready') {
+    await reply(
+      m.id,
+      `${cmd.token.symbol} on Robinhood Chain is coming soon — not enabled for tips yet. SOL, USDC, CATE, ZCAT and ANSEM work today.`,
+    );
+    return;
+  }
   if (intent === 'recipient_not_registered') {
     await reply(
       m.id,

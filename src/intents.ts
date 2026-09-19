@@ -59,7 +59,13 @@ export async function createIntent(opts: {
   amount: bigint;
   token: TokenInfo;
   sourceTweetId: string;
-}): Promise<Intent | null | 'recipient_not_registered' | 'spl_needs_wallet'> {
+}): Promise<Intent | null | 'recipient_not_registered' | 'spl_needs_wallet' | 'chain_not_ready'> {
+  // Robinhood Chain (EVM) transfers aren't wired into the mention flow yet —
+  // only the standalone test path exists. Refuse cleanly instead of creating a
+  // broken intent (and its 18-decimal amount would also need the widened
+  // NUMERIC column). Remove this once the EVM approve branch ships.
+  if (opts.token.chain !== 'solana') return 'chain_not_ready';
+
   const { rows: recipientRows } = await db.query<{ wallet: string | null }>(
     `SELECT wallet FROM users WHERE x_user_id = $1 AND wallet IS NOT NULL`,
     [opts.recipientXUserId],
