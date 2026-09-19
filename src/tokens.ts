@@ -21,6 +21,12 @@ export interface TokenInfo {
   decimals: number;
   /** extra spellings the parser should accept, lowercase. */
   aliases: string[];
+  /**
+   * Transfer fee in basis points, for Token-2022 tokens that take a cut on
+   * every transfer (e.g. ZCAT is 300 = 3%). Used to verify the recipient
+   * received the expected post-fee amount. Omit or 0 for no fee.
+   */
+  transferFeeBps?: number;
 }
 
 export const TOKENS: TokenInfo[] = [
@@ -49,7 +55,8 @@ export const TOKENS: TokenInfo[] = [
     symbol: 'ZCAT',
     name: 'ZCat',
     mint: new PublicKey('HcRLc9VDgjLeK154xDawfb1dmVJ98DoSqcwTHGqiDeJR'),
-    decimals: 9, // per user; verify on solscan
+    decimals: 9,
+    transferFeeBps: 300, // 3% transfer fee (Token-2022)
     aliases: ['zcat', '$zcat'],
   },
 ];

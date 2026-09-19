@@ -274,6 +274,8 @@ export async function verifyCredit(opts: {
   // SPL:
   mint?: PublicKey;
   ownerWallet?: PublicKey;
+  /** transfer fee in basis points, if the token charges one */
+  transferFeeBps?: number;
 }): Promise<boolean> {
   const tx = await connection.getTransaction(opts.signature, {
     commitment: 'confirmed',
@@ -290,7 +292,20 @@ export async function verifyCredit(opts: {
     const post = tx.meta?.postTokenBalances?.find(match);
     const preAmt = BigInt(pre?.uiTokenAmount.amount ?? '0');
     const postAmt = BigInt(post?.uiTokenAmount.amount ?? '0');
-    return postAmt - preAmt >= opts.amount;
+    const received = postAmt - preAmt;
+
+    // Expected amount after the token's transfer fee. For a no-fee token the
+    // expected == amount. For a fee token (e.g. ZCAT 3%) the recipient gets
+    // amount * (10000 - feeBps) / 10000. We accept a small tolerance band
+    // around that (fees can round down on-chain, and we never want a legitimate
+    // transfer to read as failed), but reject anything materially short.
+    const feeBps = BigInt(opts.transferFeeBps ?? 0);
+    const expected = (opts.amount * (10000n - feeBps)) / 10000n;
+    // Allow the received amount to be anywhere from just under expected up to
+    // the full amount: lower bound expected minus 0.5% slack, upper bound the
+    // full pre-fee amount (never more).
+    const lowerBound = (expected * 995n) / 1000n;
+    return received >= lowerBound && received <= opts.amount;
   }
 
   // SOL: compare the destination wallet's lamport balance.

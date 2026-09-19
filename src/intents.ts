@@ -204,12 +204,14 @@ export async function confirmIntent(
 
   if (intent.route === 'direct') {
     if (token.mint) {
-      // SPL: verify the recipient wallet's balance of this mint rose.
+      // SPL: verify the recipient wallet's balance of this mint rose by the
+      // expected post-fee amount.
       ok = await verifyCredit({
         signature,
         amount,
         mint: token.mint,
         ownerWallet: new PublicKey(intent.recipient_wallet!),
+        transferFeeBps: token.transferFeeBps,
       });
     } else {
       // Native SOL to the recipient wallet.
