@@ -13,6 +13,9 @@ import {
   createTransferCheckedInstruction,
   getAccount,
   TokenAccountNotFoundError,
+  TOKEN_PROGRAM_ID,
+  TOKEN_2022_PROGRAM_ID,
+  ASSOCIATED_TOKEN_PROGRAM_ID,
 } from '@solana/spl-token';
 import { config, escrowProgramId, attestorKeypair } from './config.js';
 import type { TokenInfo } from './tokens.js';
@@ -137,15 +140,43 @@ export function transferIx(from: PublicKey, to: PublicKey, lamports: bigint): Tr
 }
 
 /**
+ * Which token program owns a mint. Newer tokens (many pump.fun ones, including
+ * some we allowlist) are Token-2022, which is a different on-chain program from
+ * the legacy SPL Token program. Every account and instruction for that mint —
+ * the ATA derivation, the create-ATA, and the transfer — must target the same
+ * program, or the chain rejects it with "IncorrectProgramId".
+ *
+ * We read the mint account's owner to decide, and cache it since a mint's owner
+ * never changes.
+ */
+const mintProgramCache = new Map<string, PublicKey>();
+
+export async function tokenProgramForMint(mint: PublicKey): Promise<PublicKey> {
+  const key = mint.toBase58();
+  const cached = mintProgramCache.get(key);
+  if (cached) return cached;
+
+  const info = await connection.getAccountInfo(mint);
+  if (!info) throw new Error(`Mint ${key} not found on ${config.solana.cluster}`);
+  // The account's owner IS the token program that governs it.
+  const program = info.owner.equals(TOKEN_2022_PROGRAM_ID)
+    ? TOKEN_2022_PROGRAM_ID
+    : TOKEN_PROGRAM_ID;
+  mintProgramCache.set(key, program);
+  return program;
+}
+
+/**
  * Build the instructions to send an SPL token from `from` to `to`.
  *
  * SPL tokens don't live at a wallet address directly — each (wallet, mint) pair
  * has an "associated token account" (ATA) that holds that token. So:
- *  - resolve both sides' ATAs,
+ *  - resolve the correct token program for this mint (legacy or Token-2022),
+ *  - resolve both sides' ATAs under that program,
  *  - if the recipient has never held this token, prepend an instruction that
  *    creates their ATA (the sender pays the ~0.002 SOL rent for it),
- *  - transfer with `transferChecked`, which verifies the mint and decimals
- *    on-chain so a wrong-decimals bug can't silently move the wrong amount.
+ *  - transfer with `transferChecked`, which verifies mint and decimals on-chain
+ *    so a wrong-decimals bug can't silently move the wrong amount.
  */
 export async function splTransferIxs(opts: {
   from: PublicKey;
@@ -154,20 +185,40 @@ export async function splTransferIxs(opts: {
   amount: bigint;
   decimals: number;
 }): Promise<{ ixs: TransactionInstruction[]; destTokenAccount: PublicKey }> {
-  const fromAta = await getAssociatedTokenAddress(opts.mint, opts.from);
-  const toAta = await getAssociatedTokenAddress(opts.mint, opts.to);
+  const programId = await tokenProgramForMint(opts.mint);
+  const fromAta = await getAssociatedTokenAddress(
+    opts.mint,
+    opts.from,
+    false,
+    programId,
+    ASSOCIATED_TOKEN_PROGRAM_ID,
+  );
+  const toAta = await getAssociatedTokenAddress(
+    opts.mint,
+    opts.to,
+    false,
+    programId,
+    ASSOCIATED_TOKEN_PROGRAM_ID,
+  );
   const ixs: TransactionInstruction[] = [];
 
   let recipientHasAta = true;
   try {
-    await getAccount(connection, toAta);
+    await getAccount(connection, toAta, undefined, programId);
   } catch (err) {
     if (err instanceof TokenAccountNotFoundError) recipientHasAta = false;
     else throw err;
   }
   if (!recipientHasAta) {
     ixs.push(
-      createAssociatedTokenAccountInstruction(opts.from, toAta, opts.to, opts.mint),
+      createAssociatedTokenAccountInstruction(
+        opts.from,
+        toAta,
+        opts.to,
+        opts.mint,
+        programId,
+        ASSOCIATED_TOKEN_PROGRAM_ID,
+      ),
     );
   }
 
@@ -179,6 +230,8 @@ export async function splTransferIxs(opts: {
       opts.from,
       opts.amount,
       opts.decimals,
+      [],
+      programId,
     ),
   );
   return { ixs, destTokenAccount: toAta };
@@ -190,7 +243,14 @@ export async function creditDestination(
   token: TokenInfo,
 ): Promise<PublicKey> {
   if (!token.mint) return wallet;
-  return getAssociatedTokenAddress(token.mint, wallet);
+  const programId = await tokenProgramForMint(token.mint);
+  return getAssociatedTokenAddress(
+    token.mint,
+    wallet,
+    false,
+    programId,
+    ASSOCIATED_TOKEN_PROGRAM_ID,
+  );
 }
 
 /**
