@@ -492,9 +492,9 @@ if (config.serveWeb) {
   const indexHtml = readFileSync(join(webDist, 'index.html'), 'utf8');
   const cardTags = [
     `<meta property="og:type" content="website" />`,
-    `<meta property="og:site_name" content="XCrypto" />`,
+    `<meta property="og:site_name" content="XLedger" />`,
     `<meta property="og:title" content="Confirm your transaction" />`,
-    `<meta property="og:description" content="Review and sign it in your own wallet. XCrypto never holds your funds." />`,
+    `<meta property="og:description" content="Review and sign it in your own wallet. XLedger never holds your funds." />`,
     `<meta property="og:image" content="${config.baseUrl}/card.png" />`,
     `<meta name="twitter:card" content="summary_large_image" />`,
     `<meta name="twitter:title" content="Confirm your transaction" />`,

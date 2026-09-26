@@ -1,4 +1,4 @@
--- XCrypto schema, non-custodial.
+-- XLedger schema, non-custodial.
 --
 -- Note what is NOT here: there is no balance column anywhere. The app never
 -- owes anybody anything, so there is nothing to account for. SOL lives either

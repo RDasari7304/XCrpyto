@@ -117,7 +117,7 @@ The install should now finish cleanly.
 **10.** Open **http://localhost:5173** in your Windows browser.
 
 You should see "Tip anyone on X in SOL", a "Where your SOL sits" slip ending in
-*Ever held by XCrypto — Never*, and a "Sign in with X" button.
+*Ever held by XLedger — Never*, and a "Sign in with X" button.
 
 **11.** Check the easy-to-break things.
 

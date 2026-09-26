@@ -1,7 +1,7 @@
 import { PublicKey } from '@solana/web3.js';
 
 /**
- * The assets XCrypto can move. SOL is native; the rest are SPL tokens,
+ * The assets XLedger can move. SOL is native; the rest are SPL tokens,
  * identified by their mint address. Amounts are always handled in the token's
  * smallest unit (lamports for SOL, "base units" for SPL) as bigint — never
  * floats — using each token's `decimals`.

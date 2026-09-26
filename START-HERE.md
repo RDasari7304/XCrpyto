@@ -1,8 +1,8 @@
-# XCrypto
+# XLedger
 
 Non-custodial SOL tipping on X. Reply to a post with
-`@XCryptoBot send 5 sol to this user`; the bot builds a transaction and sends you
-a link; you sign it in your own wallet. XCrypto never holds anyone's SOL and has
+`@XLedger_Bot send 5 sol to this user`; the bot builds a transaction and sends you
+a link; you sign it in your own wallet. XLedger never holds anyone's SOL and has
 no key that can spend it.
 
 ## Which document do you want

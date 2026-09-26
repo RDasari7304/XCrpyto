@@ -1,7 +1,7 @@
-# XCrypto — non-custodial SOL tipping on X
+# XLedger — non-custodial SOL tipping on X
 
-Reply to a post with `@XCryptoBot send 5 sol to this user`. The bot builds a
-transaction and sends you a link. You sign it in your own wallet. XCrypto never
+Reply to a post with `@XLedger_Bot send 5 sol to this user`. The bot builds a
+transaction and sends you a link. You sign it in your own wallet. XLedger never
 holds your SOL and has no key that can spend it.
 
 ## What changed from the first draft
@@ -21,7 +21,7 @@ anything.
 ## Flow
 
 ```
-@XCryptoBot send 5 SOL to @alice
+@XLedger_Bot send 5 SOL to @alice
           │
           ▼
    mention poller parses the command      ← nothing moves yet
@@ -57,7 +57,7 @@ program in `programs/xcrypto-escrow/src/lib.rs`:
   N" and nothing more. It can't redirect the funds, because the recipient must
   also sign and is the only account that can receive.
 - **refund** — after 30 days the sender takes it back, no attestation needed. So
-  if XCrypto disappears tomorrow, nobody's SOL is stranded.
+  if XLedger disappears tomorrow, nobody's SOL is stranded.
 
 The X id is hashed before it goes on-chain, so the chain doesn't publish a list
 of which X accounts have unclaimed tips waiting.

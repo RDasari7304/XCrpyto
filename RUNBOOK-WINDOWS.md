@@ -59,7 +59,7 @@ meta-package.
 **2.** Open **http://localhost:5173**.
 
 You should see "Tip anyone on X in SOL", a "Where your SOL sits" slip ending in
-*Ever held by XCrypto — Never*, and a "Sign in with X" button.
+*Ever held by XLedger — Never*, and a "Sign in with X" button.
 
 **3.** Check the easy-to-break things.
 

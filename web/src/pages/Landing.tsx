@@ -31,7 +31,7 @@ export default function Landing() {
             <p className="muted" style={{ marginBottom: '0.6rem' }}>Try it like this</p>
             <div className="example">
               <Coin symbol="USDC" logo={USDC_LOGO} />
-              <span>@XCryptoBott send <b>5 usdc</b> to @friend</span>
+              <span>@XLedger_Bot send <b>5 usdc</b> to @friend</span>
             </div>
           </div>
         </div>

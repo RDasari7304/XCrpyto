@@ -270,7 +270,7 @@ export default function Dashboard() {
       </div>
 
       <div className="foot">
-        <span>XCrypto never holds your funds and can't spend them.</span>
+        <span>XLedger never holds your funds and can't spend them.</span>
         <button className="btn btn-ghost btn-sm" onClick={signOut}>
           Sign out
         </button>

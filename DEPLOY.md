@@ -37,7 +37,7 @@ access.
 cd ~/xcrypto
 git init
 git add .
-git commit -m "XCrypto: non-custodial X tipping"
+git commit -m "XLedger: non-custodial X tipping"
 git branch -M main
 git remote add origin git@github.com:<you>/xcrypto.git
 git push -u origin main

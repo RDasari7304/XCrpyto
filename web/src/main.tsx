@@ -15,7 +15,7 @@ function Shell({ children }: { children: React.ReactNode }) {
         <span className="brand">
           <Link to="/">
             <span className="brand-dot">X</span>
-            XCrypto
+            XLedger
           </Link>
         </span>
         <span className="muted" style={{ fontSize: '0.85rem' }}>You sign every transfer</span>

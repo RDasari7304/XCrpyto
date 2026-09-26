@@ -32,7 +32,7 @@ Leave this running. This is **terminal 1**.
 **2.** Open **http://localhost:5173**.
 
 You should see the landing page: "Tip anyone on X in SOL", a "Where your SOL
-sits" slip ending in *Ever held by XCrypto — Never*, and a "Sign in with X"
+sits" slip ending in *Ever held by XLedger — Never*, and a "Sign in with X"
 button.
 
 **3.** Check the things that are easy to get wrong.

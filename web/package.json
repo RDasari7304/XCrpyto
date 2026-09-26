@@ -1,5 +1,5 @@
 {
-  "name": "xcrypto-web",
+  "name": "xledger-web",
   "private": true,
   "type": "module",
   "scripts": {

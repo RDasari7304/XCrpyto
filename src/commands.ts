@@ -20,10 +20,10 @@ const AMOUNT = '(\\d{1,15}(?:\\.\\d{1,9})?)';
  * Nothing here moves money; it only produces a proposal the sender must sign.
  *
  * Accepted (SOL or any supported SPL token):
- *   @XCryptoBot send 5 usdc to @alice
- *   @XCryptoBot send 0.25 sol to this user
- *   @XCryptoBot tip @alice 1000 bonk
- *   @XCryptoBot tip 1 jup            -> recipient = author of the replied-to post
+ *   @XLedger_Bot send 5 usdc to @alice
+ *   @XLedger_Bot send 0.25 sol to this user
+ *   @XLedger_Bot tip @alice 1000 bonk
+ *   @XLedger_Bot tip 1 jup            -> recipient = author of the replied-to post
  */
 export function parseCommand(text: string): Command {
   const t = text.replace(/\s+/g, ' ').trim();

@@ -38,7 +38,7 @@ export const config = {
     clientSecret: process.env.X_CLIENT_SECRET ?? '',
     botBearer: process.env.X_BOT_TOKEN ?? '',
     botUserId: process.env.X_BOT_USER_ID ?? '',
-    botHandle: (process.env.X_BOT_HANDLE ?? 'XCryptoBot').replace(/^@/, ''),
+    botHandle: (process.env.X_BOT_HANDLE ?? 'XLedger_Bot').replace(/^@/, ''),
     // OAuth 1.0a User Context credentials, used only to post replies as the bot.
     // (Reads use the App-Only Bearer token above.)
     consumerKey: process.env.X_API_KEY ?? '',
