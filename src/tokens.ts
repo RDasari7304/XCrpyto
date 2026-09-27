@@ -157,6 +157,63 @@ export const TOKENS: TokenInfo[] = [
     decimals: 6, // confirmed via solscan; no transfer fee
     aliases: ['ansem', '$ansem'],
   },
+  // Token-2022 transfer-fee tokens (same handling as ZCAT). Decimals and fee
+  // basis points read from each mint's on-chain TransferFeeConfig extension.
+  {
+    symbol: 'MASK',
+    name: 'Nullmask',
+    chain: 'solana',
+    mint: new PublicKey('HuAXPyDWDaMYFKuwQHpqL1oPnj93zdzWmtvFGzCeCUa7'),
+    decimals: 6,
+    transferFeeBps: 300, // 3% transfer fee (Token-2022)
+    aliases: ['mask', '$mask', 'nullmask'],
+  },
+  {
+    symbol: 'SI',
+    name: 'Super Inu',
+    chain: 'solana',
+    mint: new PublicKey('DEW9dSN6QpWyNthphCpMmAbZP1Q4cEKR9xQXAri98WDP'),
+    decimals: 6,
+    transferFeeBps: 100, // 1% transfer fee (Token-2022)
+    aliases: ['si', '$si', 'superinu'],
+  },
+  {
+    symbol: 'ALLINU',
+    name: 'ALLINU',
+    chain: 'solana',
+    mint: new PublicKey('4MMQY9bwkxxTtsK3W227Q5ABT6yFY8Pmn9Ze7wmAXKY8'),
+    decimals: 6,
+    transferFeeBps: 100, // 1% transfer fee (Token-2022)
+    aliases: ['allinu', '$allinu'],
+  },
+  {
+    symbol: 'PURR',
+    name: 'Hypurr',
+    chain: 'solana',
+    mint: new PublicKey('8RNUw4N655VSrZKuhGdywhbSMDTrheguFPfxbpE2NZHQ'),
+    decimals: 9,
+    transferFeeBps: 300, // 3% transfer fee (Token-2022)
+    aliases: ['purr', '$purr', 'hypurr'],
+  },
+  {
+    symbol: 'NEARKAT',
+    name: 'NearKat',
+    chain: 'solana',
+    mint: new PublicKey('6UtY9iTZMQQ5QZVrbzFnNaJntV7oySm9k97mvwnuZcxr'),
+    decimals: 6,
+    transferFeeBps: 300, // 3% transfer fee (Token-2022)
+    aliases: ['nearkat', '$nearkat'],
+  },
+  // Plain token, no transfer fee (same handling as ANSEM and CATE). Pump.fun
+  // mints are Token-2022; the program is detected on-chain per mint.
+  {
+    symbol: 'TRIPLET',
+    name: 'Tung Tung Tung Sahur',
+    chain: 'solana',
+    mint: new PublicKey('J8PSdNP3QewKq2Z1JJJFDMaqF7KcaiJhR7gbr5KZpump'),
+    decimals: 6, // no transfer fee
+    aliases: ['triplet', '$triplet'],
+  },
   {
     symbol: 'AI',
     name: 'Artificial Inu',
