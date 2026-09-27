@@ -19,6 +19,17 @@ function hashToken(token: string): string {
   return createHash('sha256').update(token + config.sessionPepper).digest('hex');
 }
 
+/** https://host/?api-key=... -> "https://host wss://host" (no path, no key). */
+function rpcOrigins(url: string): string {
+  try {
+    const u = new URL(url);
+    const ws = u.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${u.origin} ${ws}//${u.host}`;
+  } catch {
+    return '';
+  }
+}
+
 export function securityHeaders(req: Request, res: Response, next: NextFunction): void {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
@@ -38,9 +49,10 @@ export function securityHeaders(req: Request, res: Response, next: NextFunction)
           "script-src 'self'",
           "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
           "font-src 'self' https://fonts.gstatic.com",
-          "img-src 'self' data: https://raw.githubusercontent.com https://*.githubusercontent.com",
-          // Wallet extensions and the Solana RPC endpoint are reached from the page.
-          "connect-src 'self' " + (process.env.SOLANA_RPC_URL ?? '') + ' ' + (process.env.SOLANA_WS_URL ?? ''),
+          "img-src 'self' data: https://raw.githubusercontent.com https://*.githubusercontent.com https://pbs.twimg.com https://abs.twimg.com",
+          // The page talks to the browser-facing Solana RPC. Only its origin goes
+          // here: this header is public, so it must never carry an API key.
+          "connect-src 'self' " + rpcOrigins(config.solana.publicRpcUrl) + ' ' + (process.env.SOLANA_WS_URL ?? ''),
           "frame-ancestors 'none'",
           "base-uri 'self'",
           "form-action 'self'",

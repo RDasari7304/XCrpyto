@@ -7,8 +7,10 @@ import cookieParser from 'cookie-parser';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
 import { PublicKey, Transaction } from '@solana/web3.js';
+import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, getAssociatedTokenAddressSync } from '@solana/spl-token';
 import { config, db, lamportsToSol, attestorKeypair } from './config.js';
-import { tokenBySymbol, fromBaseUnits } from './tokens.js';
+import { TOKENS, tokenBySymbol, fromBaseUnits, toBaseUnits } from './tokens.js';
+import { validateTipAmount } from './commands.js';
 
 /** Format a stored base-unit amount by its token symbol (defaults to SOL). */
 function fmtAmount(amount: string, symbol: string | null): string {
@@ -20,7 +22,7 @@ function logoFor(symbol: string | null): string | null {
   const t = symbol ? tokenBySymbol(symbol) : null;
   return t?.logoURI ?? null;
 }
-import { beginOAuth, exchangeCode, me } from './x.js';
+import { beginOAuth, exchangeCode, me, lookupUsersByIds } from './x.js';
 import {
   buildUnsigned,
   claimIx,
@@ -30,6 +32,7 @@ import {
 } from './solana.js';
 import {
   buildIntentTransaction,
+  createIntent,
   confirmIntent,
   getIntentForSender,
   IntentError,
@@ -91,10 +94,12 @@ app.get('/auth/callback', async (req, res) => {
     const token = await exchangeCode(code, rows[0].code_verifier);
     const profile = await me(token);
     const { rows: users } = await db.query<{ id: string }>(
-      `INSERT INTO users (x_user_id, x_handle) VALUES ($1, $2)
-       ON CONFLICT (x_user_id) DO UPDATE SET x_handle = EXCLUDED.x_handle
+      `INSERT INTO users (x_user_id, x_handle, avatar_url) VALUES ($1, $2, $3)
+       ON CONFLICT (x_user_id) DO UPDATE
+         SET x_handle = EXCLUDED.x_handle,
+             avatar_url = COALESCE(EXCLUDED.avatar_url, users.avatar_url)
        RETURNING id`,
-      [profile.id, profile.username],
+      [profile.id, profile.username, profile.profile_image_url ?? null],
     );
     await createSession(res, users[0].id, req.headers['user-agent']);
     res.redirect(config.webOrigin + safeNext(rows[0].next));
@@ -473,6 +478,165 @@ app.post('/api/claims/:pda/confirm', requireAuth, requireCsrf, async (req: Authe
   res.json({ status: 'claimed' });
 });
 
+// ---------------------------------------------------------------- members
+
+/** Only https images from X's CDN, upsized from the 48px default. */
+function avatarFor(url: string | null): string | null {
+  if (!url || !/^https:\/\/(pbs|abs)\.twimg\.com\//.test(url)) return null;
+  return url.replace('_normal.', '_bigger.');
+}
+
+/** Newest sign-ups first. Signed-in users only, so it can't be scraped anonymously. */
+app.get('/api/users', requireAuth, limiter('members', 120, 600), async (req: AuthedRequest, res) => {
+  const before = typeof req.query.before === 'string' && /^\d+$/.test(req.query.before) ? req.query.before : null;
+  const limit = 30;
+  const [{ rows }, count] = await Promise.all([
+    db.query<{ id: string; x_handle: string; avatar_url: string | null; wallet: string | null; created_at: string }>(
+      `SELECT id, x_handle, avatar_url, wallet, created_at
+         FROM users
+        WHERE x_handle IS NOT NULL AND x_user_id NOT LIKE 'dev-%'
+          AND ($1::bigint IS NULL OR id < $1::bigint)
+        ORDER BY id DESC
+        LIMIT ${limit + 1}`,
+      [before],
+    ),
+    db.query<{ total: string; with_wallet: string }>(
+      `SELECT count(*) AS total, count(wallet) AS with_wallet
+         FROM users WHERE x_handle IS NOT NULL AND x_user_id NOT LIKE 'dev-%'`,
+    ),
+  ]);
+  const page = rows.slice(0, limit);
+  res.json({
+    total: Number(count.rows[0].total),
+    withWallet: Number(count.rows[0].with_wallet),
+    users: page.map((u) => ({
+      id: u.id,
+      handle: u.x_handle,
+      avatar: avatarFor(u.avatar_url),
+      wallet: u.wallet,
+      joinedAt: u.created_at,
+    })),
+    nextBefore: rows.length > limit ? page[page.length - 1].id : null,
+  });
+});
+
+/** Handle search for the Send page: people who can actually receive (wallet linked). */
+app.get('/api/users/search', requireAuth, limiter('search', 240, 600), async (req: AuthedRequest, res) => {
+  const q = String(req.query.q ?? '').trim().replace(/^@/, '').toLowerCase();
+  if (!/^\w{1,15}$/.test(q)) return res.json({ users: [] });
+  const { rows } = await db.query<{ id: string; x_handle: string; avatar_url: string | null; wallet: string }>(
+    `SELECT id, x_handle, avatar_url, wallet
+       FROM users
+      WHERE wallet IS NOT NULL AND x_handle IS NOT NULL AND id <> $2
+        AND lower(x_handle) LIKE $3
+      ORDER BY (lower(x_handle) = $1) DESC, length(x_handle), x_handle
+      LIMIT 10`,
+    // "_" is a LIKE wildcard and is legal in X handles, so escape it.
+    [q, req.user!.id, q.replace(/_/g, '\\_') + '%'],
+  );
+  res.json({
+    users: rows.map((u) => ({ id: u.id, handle: u.x_handle, avatar: avatarFor(u.avatar_url), wallet: u.wallet })),
+  });
+});
+
+// ---------------------------------------------------------------- balances
+
+/**
+ * The signed-in user's balances for the tokens XLedger can send, read from
+ * their linked wallet. Only the associated token account counts, because that
+ * is the account a transfer is built from.
+ */
+app.get('/api/balances', requireAuth, limiter('balances', 60, 600), async (req: AuthedRequest, res) => {
+  const wallet = req.user!.wallet;
+  if (!wallet) return res.json({ wallet: null, tokens: [] });
+  const owner = new PublicKey(wallet);
+  try {
+    const [lamports, legacy, t22] = await Promise.all([
+      connection.getBalance(owner, 'confirmed'),
+      connection.getParsedTokenAccountsByOwner(owner, { programId: TOKEN_PROGRAM_ID }, 'confirmed'),
+      connection.getParsedTokenAccountsByOwner(owner, { programId: TOKEN_2022_PROGRAM_ID }, 'confirmed'),
+    ]);
+    const held = new Map<string, bigint>();
+    for (const [accounts, programId] of [
+      [legacy, TOKEN_PROGRAM_ID],
+      [t22, TOKEN_2022_PROGRAM_ID],
+    ] as const) {
+      for (const a of accounts.value) {
+        const info = (a.account.data as { parsed?: { info?: { mint?: string; tokenAmount?: { amount?: string } } } })
+          .parsed?.info;
+        if (!info?.mint || !info.tokenAmount?.amount) continue;
+        const ata = getAssociatedTokenAddressSync(new PublicKey(info.mint), owner, false, programId);
+        if (!ata.equals(a.pubkey)) continue;
+        held.set(info.mint, (held.get(info.mint) ?? 0n) + BigInt(info.tokenAmount.amount));
+      }
+    }
+    const tokens = TOKENS.filter((t) => t.chain === 'solana').map((t) => {
+      const balance = t.mint ? held.get(t.mint.toBase58()) ?? 0n : BigInt(lamports);
+      return {
+        symbol: t.symbol,
+        name: t.name,
+        logo: t.logoURI ?? null,
+        decimals: t.decimals,
+        balance: balance.toString(),
+        display: fromBaseUnits(balance, t),
+        transferFeeBps: t.transferFeeBps ?? 0,
+      };
+    });
+    res.json({ wallet, lamports: String(lamports), tokens });
+  } catch (err) {
+    console.error('balances failed:', err);
+    fail(res, 502, 'Could not read your wallet balances. Try again in a moment.');
+  }
+});
+
+// ------------------------------------------------------ send from the web
+
+/**
+ * Create a tip from the Send page. Same record the bot creates from a mention,
+ * so it goes through the same approval page and the sender still signs the
+ * exact transfer in their own wallet. Recipients must have a linked wallet.
+ */
+app.post('/api/intents', requireAuth, requireCsrf, limiter('web-intent', 30, 3600), async (req: AuthedRequest, res) => {
+  const u = req.user!;
+  if (!u.wallet) return fail(res, 400, 'Link a wallet on your account page first.');
+  const { toUserId, token: symbol, amount } = req.body ?? {};
+  if (typeof toUserId !== 'string' || !/^\d+$/.test(toUserId)) return fail(res, 400, 'Pick someone to send to.');
+  const token = typeof symbol === 'string' ? tokenBySymbol(symbol) : null;
+  if (!token || token.chain !== 'solana') return fail(res, 400, "That token can't be sent from here yet.");
+  if (typeof amount !== 'string') return fail(res, 400, 'Enter an amount.');
+
+  let base: bigint;
+  try {
+    base = toBaseUnits(amount.trim(), token);
+  } catch (err) {
+    return fail(res, 400, err instanceof Error ? err.message : 'Invalid amount');
+  }
+  const amountError = validateTipAmount(base);
+  if (amountError) return fail(res, 400, amountError);
+
+  const { rows } = await db.query<{ x_user_id: string; x_handle: string | null; wallet: string | null }>(
+    `SELECT x_user_id, x_handle, wallet FROM users WHERE id = $1`,
+    [toUserId],
+  );
+  const recipient = rows[0];
+  if (!recipient) return fail(res, 404, 'That account was not found.');
+  if (recipient.x_user_id === u.x_user_id || recipient.wallet === u.wallet) {
+    return fail(res, 400, "You can't send to yourself.");
+  }
+  if (!recipient.wallet) return fail(res, 409, `@${recipient.x_handle} hasn't linked a wallet yet.`);
+
+  const intent = await createIntent({
+    senderUserId: u.id,
+    recipientXUserId: recipient.x_user_id,
+    recipientXHandle: recipient.x_handle,
+    amount: base,
+    token,
+    sourceTweetId: null,
+  });
+  if (!intent || typeof intent === 'string') return fail(res, 409, 'Could not create that transfer. Try again.');
+  res.json({ id: intent.id });
+});
+
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
 // Serving the built frontend from this process keeps the API and the page on
@@ -520,6 +684,40 @@ if (config.serveWeb) {
 }
 
 app.use((_req, res) => fail(res, 404, 'Not found'));
+
+/**
+ * Schema bits the new members/avatar features need, applied at boot so a deploy
+ * works even before `npm run migrate` is run. Both statements are idempotent.
+ */
+async function ensureSchema(): Promise<void> {
+  await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT`);
+  await db.query(`CREATE INDEX IF NOT EXISTS users_handle_lower_idx ON users (lower(x_handle))`);
+}
+
+/** Fill in profile pictures for accounts created before avatars were stored. */
+async function backfillAvatars(): Promise<void> {
+  const { rows } = await db.query<{ x_user_id: string }>(
+    `SELECT x_user_id FROM users
+      WHERE avatar_url IS NULL AND x_user_id ~ '^[0-9]+$'
+      ORDER BY id DESC LIMIT 100`,
+  );
+  if (rows.length === 0) return;
+  const found = await lookupUsersByIds(rows.map((r) => r.x_user_id));
+  for (const u of found) {
+    if (!u.profile_image_url) continue;
+    await db.query(`UPDATE users SET avatar_url = $2, x_handle = $3 WHERE x_user_id = $1`, [
+      u.id,
+      u.profile_image_url,
+      u.username,
+    ]);
+  }
+  console.log(`avatars: backfilled ${found.length} of ${rows.length}`);
+}
+
+void ensureSchema()
+  .then(() => backfillAvatars())
+  .catch((err) => console.error('startup schema/avatar step failed:', err));
+setInterval(() => void backfillAvatars().catch(() => {}), 6 * 60 * 60 * 1000).unref();
 
 const server = app.listen(config.port, () => {
   console.log(`listening on :${config.port} (${config.baseUrl})`);

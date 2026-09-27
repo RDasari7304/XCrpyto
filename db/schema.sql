@@ -17,6 +17,9 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE INDEX IF NOT EXISTS users_wallet_idx ON users(wallet) WHERE wallet IS NOT NULL;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS evm_wallet TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS evm_verified_at TIMESTAMPTZ;
+-- X profile picture URL, refreshed on every sign-in.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+CREATE INDEX IF NOT EXISTS users_handle_lower_idx ON users (lower(x_handle));
 
 -- Sessions store only a hash of the cookie token, so a database dump does not
 -- hand over live sessions.

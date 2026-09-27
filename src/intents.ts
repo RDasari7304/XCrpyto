@@ -60,7 +60,8 @@ export async function createIntent(opts: {
   recipientXHandle: string | null;
   amount: bigint;
   token: TokenInfo;
-  sourceTweetId: string;
+  /** The mention that created this tip, or null when created from the web app. */
+  sourceTweetId: string | null;
 }): Promise<Intent | null | 'recipient_not_registered' | 'spl_needs_wallet' | 'evm_needs_wallet'> {
   const isEvm = isEvmChain(opts.token.chain);
 

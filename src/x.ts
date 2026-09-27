@@ -83,9 +83,29 @@ async function getUserContext<T>(pathWithQuery: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-export async function me(token: string): Promise<{ id: string; username: string }> {
-  const json = await get<{ data: { id: string; username: string } }>('/users/me', token);
+export async function me(
+  token: string,
+): Promise<{ id: string; username: string; profile_image_url?: string }> {
+  const json = await get<{ data: { id: string; username: string; profile_image_url?: string } }>(
+    '/users/me?user.fields=profile_image_url',
+    token,
+  );
   return json.data;
+}
+
+/**
+ * Look up to 100 users by X id with the app-only Bearer token. Used to backfill
+ * profile pictures for accounts that signed up before avatars were stored.
+ */
+export async function lookupUsersByIds(
+  ids: string[],
+): Promise<Array<{ id: string; username: string; profile_image_url?: string }>> {
+  if (ids.length === 0 || !config.x.botBearer) return [];
+  const json = await get<{ data?: Array<{ id: string; username: string; profile_image_url?: string }> }>(
+    `/users?ids=${ids.slice(0, 100).join(',')}&user.fields=profile_image_url`,
+    config.x.botBearer,
+  );
+  return json.data ?? [];
 }
 
 /**

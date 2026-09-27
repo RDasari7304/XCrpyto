@@ -135,3 +135,44 @@ export const confirmClaim = (pda: string, signature: string) =>
     method: 'POST',
     body: JSON.stringify({ signature }),
   });
+
+// ------------------------------------------------------------ members & send
+
+export interface Member {
+  id: string;
+  handle: string;
+  avatar: string | null;
+  wallet: string | null;
+  joinedAt: string;
+}
+
+export const listMembers = (before?: string) =>
+  request<{ total: number; withWallet: number; users: Member[]; nextBefore: string | null }>(
+    `/api/users${before ? `?before=${encodeURIComponent(before)}` : ''}`,
+  );
+
+export interface Recipient {
+  id: string;
+  handle: string;
+  avatar: string | null;
+  wallet: string;
+}
+
+export const searchUsers = (q: string) =>
+  request<{ users: Recipient[] }>(`/api/users/search?q=${encodeURIComponent(q)}`);
+
+export interface TokenBalance {
+  symbol: string;
+  name: string;
+  logo: string | null;
+  decimals: number;
+  balance: string; // base units
+  display: string;
+  transferFeeBps: number;
+}
+
+export const getBalances = () =>
+  request<{ wallet: string | null; lamports?: string; tokens: TokenBalance[] }>('/api/balances');
+
+export const createTransfer = (body: { toUserId: string; token: string; amount: string }) =>
+  request<{ id: string }>('/api/intents', { method: 'POST', body: JSON.stringify(body) });
