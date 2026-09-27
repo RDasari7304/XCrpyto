@@ -24,6 +24,7 @@ export default function Approve() {
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [signature, setSignature] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -79,10 +80,19 @@ export default function Approve() {
       const tx = Transaction.from(base64ToBytes(base64));
       const signed = await signTransaction(tx);
       const sig = await rpc().sendRawTransaction(signed.serialize());
-      await rpc().confirmTransaction(sig, 'confirmed');
-      await confirmIntent(id, sig);
+      // The transfer is on its way from this point. Lock the page now so a
+      // later failure (slow confirmation, server bookkeeping) can never lead
+      // to a second, duplicate send.
       setSignature(sig);
-      await load();
+      try {
+        await rpc().confirmTransaction(sig, 'confirmed');
+        await confirmIntent(id, sig);
+        await load();
+      } catch {
+        setNotice(
+          'Your transfer was submitted. It can take a few seconds to show up. Check the signature link below; do not send it again.',
+        );
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'The transfer did not go through');
     } finally {
@@ -158,6 +168,7 @@ export default function Approve() {
         </dl>
 
         {error && <p className="error">{error}</p>}
+        {notice && <p className="muted" style={{ marginTop: '1rem' }}>{notice}</p>}
 
         {done ? (
           <Link to="/dashboard">

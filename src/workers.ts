@@ -2,7 +2,8 @@ import { config, db } from './config.js';
 import { parseCommand, validateTipAmount } from './commands.js';
 import { createIntent } from './intents.js';
 import { fromBaseUnits, isEvmChain } from './tokens.js';
-import { fetchMentions, lookupHandle, reply, RateLimited, type Mention } from './x.js';
+import { botWhoAmI, fetchMentions, lookupHandle, reply, RateLimited, type Mention } from './x.js';
+import { botOauth1Configured } from './oauth1.js';
 import { rateLimit } from './security.js';
 
 const CURSOR_KEY = 'mentions_since_id';
@@ -184,6 +185,30 @@ async function loop(name: string, fn: () => Promise<unknown>, intervalMs: number
 }
 
 console.log('workers starting');
+console.log(`reply links point to ${config.webOrigin}`);
+
+// Check the bot credentials once at boot so a bad token is obvious in the logs.
+if (!botOauth1Configured()) {
+  console.error('bot auth: X_API_KEY/SECRET and X_ACCESS_TOKEN/SECRET are not all set');
+} else {
+  botWhoAmI()
+    .then((u) => {
+      console.log(`bot auth: OK as @${u.username} (id ${u.id})`);
+      if (config.x.botUserId && u.id !== config.x.botUserId) {
+        console.error(`bot auth: X_BOT_USER_ID is ${config.x.botUserId} but the tokens belong to ${u.id}. Set X_BOT_USER_ID=${u.id}.`);
+      }
+      if (u.username.toLowerCase() !== config.x.botHandle.toLowerCase()) {
+        console.error(`bot auth: X_BOT_HANDLE is ${config.x.botHandle} but the tokens belong to @${u.username}.`);
+      }
+    })
+    .catch((err) =>
+      console.error(
+        'bot auth: FAILED. X rejected X_API_KEY/X_API_SECRET/X_ACCESS_TOKEN/X_ACCESS_SECRET. ' +
+          'Check the token (starts with digits and a dash) and secret are not swapped, and that ' +
+          'all four came from the same app. ' + (err as Error).message,
+      ),
+    );
+}
 // Each poll is a billable X API read on Pay-Per-Use, so the interval directly
 // sets your idle cost. Default 60s (~43k reads/month); raise MENTION_POLL_SECONDS
 // on Render to cut spend further. A minute or two of reply delay is fine.

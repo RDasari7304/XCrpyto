@@ -180,7 +180,7 @@ app.get('/api/me', requireAuth, async (req: AuthedRequest, res) => {
     evmWallet: evmRow.rows[0]?.evm_wallet ?? null,
     csrfToken: req.csrfSecret,
     cluster: config.solana.cluster,
-    rpcUrl: config.solana.rpcUrl,
+    rpcUrl: config.solana.publicRpcUrl,
     botHandle: config.x.botHandle,
     escrowEnabled: config.solana.escrowEnabled,
     xSignInAvailable: config.x.configured,

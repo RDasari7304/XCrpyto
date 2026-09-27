@@ -34,17 +34,17 @@ export const config = {
    * still boots without them (dev login, seeded intents).
    */
   x: {
-    clientId: process.env.X_CLIENT_ID ?? '',
-    clientSecret: process.env.X_CLIENT_SECRET ?? '',
-    botBearer: process.env.X_BOT_TOKEN ?? '',
-    botUserId: process.env.X_BOT_USER_ID ?? '',
-    botHandle: (process.env.X_BOT_HANDLE ?? 'XLedger_Bot').replace(/^@/, ''),
+    clientId: (process.env.X_CLIENT_ID ?? '').trim(),
+    clientSecret: (process.env.X_CLIENT_SECRET ?? '').trim(),
+    botBearer: (process.env.X_BOT_TOKEN ?? '').trim(),
+    botUserId: (process.env.X_BOT_USER_ID ?? '').trim(),
+    botHandle: (process.env.X_BOT_HANDLE ?? 'XLedger_Bot').trim().replace(/^@/, ''),
     // OAuth 1.0a User Context credentials, used only to post replies as the bot.
     // (Reads use the App-Only Bearer token above.)
-    consumerKey: process.env.X_API_KEY ?? '',
-    consumerSecret: process.env.X_API_SECRET ?? '',
-    accessToken: process.env.X_ACCESS_TOKEN ?? '',
-    accessSecret: process.env.X_ACCESS_SECRET ?? '',
+    consumerKey: (process.env.X_API_KEY ?? '').trim(),
+    consumerSecret: (process.env.X_API_SECRET ?? '').trim(),
+    accessToken: (process.env.X_ACCESS_TOKEN ?? '').trim(),
+    accessSecret: (process.env.X_ACCESS_SECRET ?? '').trim(),
     get configured(): boolean {
       return Boolean(process.env.X_CLIENT_ID && process.env.X_CLIENT_SECRET);
     },
@@ -52,6 +52,12 @@ export const config = {
 
   solana: {
     rpcUrl: process.env.SOLANA_RPC_URL ?? 'http://127.0.0.1:8899',
+    /**
+     * RPC URL handed to browsers. Keep SOLANA_RPC_URL as an unrestricted key
+     * the server uses privately, and set this to a domain-restricted key, since
+     * anything sent to the browser is public. Falls back to SOLANA_RPC_URL.
+     */
+    publicRpcUrl: process.env.SOLANA_PUBLIC_RPC_URL || process.env.SOLANA_RPC_URL || 'http://127.0.0.1:8899',
     cluster: process.env.SOLANA_CLUSTER ?? 'localnet',
     escrowEnabled,
   },

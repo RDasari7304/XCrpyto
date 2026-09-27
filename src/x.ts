@@ -88,6 +88,15 @@ export async function me(token: string): Promise<{ id: string; username: string 
   return json.data;
 }
 
+/**
+ * Which X account the OAuth 1.0a credentials actually belong to. Used at
+ * worker startup so a wrong or swapped token shows up as one clear log line.
+ */
+export async function botWhoAmI(): Promise<{ id: string; username: string }> {
+  const json = await getUserContext<{ data: { id: string; username: string } }>('/users/me');
+  return json.data;
+}
+
 export interface Mention {
   id: string;
   text: string;
