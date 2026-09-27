@@ -1,8 +1,11 @@
 import { randomBytes } from 'node:crypto';
 import { PublicKey } from '@solana/web3.js';
 import { config, db } from './config.js';
+import { getAssociatedTokenAddressSync } from '@solana/spl-token';
 import {
   buildUnsigned,
+  connection,
+  tokenProgramForMint,
   createEscrowIx,
   escrowPda,
   recipientXHash,
@@ -62,6 +65,8 @@ export async function createIntent(opts: {
   token: TokenInfo;
   /** The mention that created this tip, or null when created from the web app. */
   sourceTweetId: string | null;
+  /** Set when this tip pays a payment request. */
+  requestId?: string | null;
 }): Promise<Intent | null | 'recipient_not_registered' | 'spl_needs_wallet' | 'evm_needs_wallet'> {
   const isEvm = isEvmChain(opts.token.chain);
 
@@ -117,8 +122,8 @@ export async function createIntent(opts: {
   const { rows } = await db.query<Intent>(
     `INSERT INTO tip_intents
        (sender_user_id, recipient_x_user_id, recipient_x_handle, recipient_wallet,
-        lamports, token_symbol, token_mint, route, escrow_nonce, source_tweet_id, expires_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now() + ($11 || ' minutes')::interval)
+        lamports, token_symbol, token_mint, route, escrow_nonce, source_tweet_id, expires_at, request_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now() + ($11 || ' minutes')::interval, $12)
      ON CONFLICT (source_tweet_id) DO NOTHING
      RETURNING *`,
     [
@@ -133,6 +138,7 @@ export async function createIntent(opts: {
       nonce?.toString() ?? null,
       opts.sourceTweetId,
       String(config.limits.intentTtlMinutes),
+      opts.requestId ?? null,
     ],
   );
   return rows[0] ?? null;
@@ -340,4 +346,103 @@ export async function confirmIntent(
       ],
     );
   }
+}
+
+export interface Preflight {
+  ok: boolean;
+  /** Plain-English reasons this transfer would fail right now. */
+  problems: string[];
+  senderWallet: string;
+  sol: string; // sender's SOL balance, display units
+  token: string | null; // sender's balance of the tip token (SPL only)
+  /** Extra SOL the sender pays to create the recipient's token account, if any. */
+  setupSol: string | null;
+}
+
+// Base fee is 5,000 lamports per signature; keep headroom for priority fees.
+const FEE_HEADROOM = 20_000n;
+
+/**
+ * Check, against the chain, whether this Solana transfer would go through if
+ * signed now: enough SOL for amount + fees, enough of the token, and the
+ * account-creation rent Solana requires. Read-only; builds nothing.
+ */
+export async function preflightIntent(intent: Intent, senderWallet: string): Promise<Preflight> {
+  const token = intentToken(intent);
+  if (isEvmChain(token.chain)) throw new IntentError('Pre-flight covers Solana transfers only.');
+
+  const amount = BigInt(intent.lamports);
+  const sender = new PublicKey(senderWallet);
+  const problems: string[] = [];
+  const sol = (l: bigint) => fromBaseUnits(l, tokenBySymbol('SOL')!);
+
+  const lamports = BigInt(await connection.getBalance(sender, 'confirmed'));
+  let tokenBalance: bigint | null = null;
+  let setup = 0n;
+
+  const { rows } = await db.query<{ wallet: string | null }>(
+    `SELECT wallet FROM users WHERE x_user_id = $1`,
+    [intent.recipient_x_user_id],
+  );
+  const recipientWallet = rows[0]?.wallet ?? null;
+  if (intent.route === 'direct' && !recipientWallet) {
+    problems.push(`@${intent.recipient_x_handle ?? 'the recipient'} no longer has a wallet linked.`);
+  }
+
+  if (!token.mint) {
+    // Native SOL.
+    const need = amount + FEE_HEADROOM;
+    if (lamports < need) {
+      problems.push(
+        `This wallet has ${sol(lamports)} SOL. Sending ${sol(amount)} SOL plus the network fee needs about ${sol(need)} SOL.`,
+      );
+    }
+    // A brand-new Solana account must receive at least the rent-exempt minimum.
+    if (recipientWallet && intent.route === 'direct') {
+      const theirs = BigInt(await connection.getBalance(new PublicKey(recipientWallet), 'confirmed'));
+      const minimum = BigInt(await connection.getMinimumBalanceForRentExemption(0));
+      if (theirs === 0n && amount < minimum) {
+        problems.push(
+          `@${intent.recipient_x_handle ?? 'Their'} wallet is empty, and Solana requires the first deposit to be at least ${sol(minimum)} SOL. Send a bit more.`,
+        );
+      }
+    }
+  } else {
+    const programId = await tokenProgramForMint(token.mint);
+    const fromAta = getAssociatedTokenAddressSync(token.mint, sender, false, programId);
+    try {
+      const bal = await connection.getTokenAccountBalance(fromAta, 'confirmed');
+      tokenBalance = BigInt(bal.value.amount);
+    } catch {
+      tokenBalance = 0n; // no token account = holds none
+    }
+    if (tokenBalance < amount) {
+      problems.push(
+        `This wallet has ${fromBaseUnits(tokenBalance, token)} ${token.symbol}, less than the ${fromBaseUnits(amount, token)} ${token.symbol} you're sending.`,
+      );
+    }
+    if (recipientWallet) {
+      const toAta = getAssociatedTokenAddressSync(token.mint, new PublicKey(recipientWallet), false, programId);
+      const exists = await connection.getAccountInfo(toAta, 'confirmed');
+      // Token-2022 accounts carry extensions and are larger; 200 bytes covers ours.
+      if (!exists) setup = BigInt(await connection.getMinimumBalanceForRentExemption(200));
+    }
+    const needSol = setup + FEE_HEADROOM;
+    if (lamports < needSol) {
+      problems.push(
+        setup > 0n
+          ? `@${intent.recipient_x_handle ?? 'They'} has never held ${token.symbol}, so this transfer also creates their token account (about ${sol(setup)} SOL). This wallet has ${sol(lamports)} SOL; add a little SOL first.`
+          : `This wallet has ${sol(lamports)} SOL, not enough for the network fee. Add a little SOL first.`,
+      );
+    }
+  }
+
+  return {
+    ok: problems.length === 0,
+    problems,
+    senderWallet,
+    sol: sol(lamports),
+    token: tokenBalance === null ? null : fromBaseUnits(tokenBalance, token),
+    setupSol: setup > 0n ? sol(setup) : null,
+  };
 }

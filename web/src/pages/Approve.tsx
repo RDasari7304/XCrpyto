@@ -2,7 +2,18 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Connection, Transaction } from '@solana/web3.js';
 import { useWallet, WalletButton, base64ToBytes } from '../wallet';
-import { ApiError, buildIntentTx, confirmIntent, getAccount, getIntent, loginUrl, runtimeRpcUrl, type IntentView } from '../api';
+import {
+  ApiError,
+  buildIntentTx,
+  confirmIntent,
+  getAccount,
+  getIntent,
+  getPreflight,
+  loginUrl,
+  runtimeRpcUrl,
+  type IntentView,
+  type Preflight,
+} from '../api';
 import { evmSend, evmConfirm, evmConnect, currentEvmAddress } from '../evm';
 import { Coin } from '../Coin';
 
@@ -17,6 +28,26 @@ function short(addr: string): string {
   return `${addr.slice(0, 6)}…${addr.slice(-6)}`;
 }
 
+/** Turn wallet/RPC errors into something a person can act on. */
+function friendlyError(err: unknown, token: string): string {
+  const msg = err instanceof Error ? err.message : String(err ?? '');
+  if (/user rejected|rejected the request|declined|cancell?ed/i.test(msg)) return 'You cancelled in your wallet. Nothing was sent.';
+  if (/insufficient lamports|no record of a prior credit|insufficient funds for fee/i.test(msg))
+    return 'Not enough SOL in this wallet for this transfer and its fee. Nothing was sent.';
+  if (/insufficient funds/i.test(msg)) return `Not enough ${token} in this wallet. Nothing was sent.`;
+  if (/blockhash not found|block height exceeded/i.test(msg))
+    return 'That took too long and the network rejected it. Nothing was sent. Press Send to try again.';
+  if (/failed to fetch|networkerror|load failed/i.test(msg)) return 'Could not reach the network. Check your connection and try again.';
+  // Simulation errors carry pages of logs; keep the first sentence.
+  return msg.split(/\. (?:Logs|Catch)/)[0].slice(0, 220) || 'The transfer did not go through.';
+}
+
+function countdown(ms: number): string {
+  if (ms <= 0) return 'expired';
+  const s = Math.floor(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} left`;
+}
+
 export default function Approve() {
   const { id } = useParams<{ id: string }>();
   const { publicKey, signTransaction } = useWallet();
@@ -25,11 +56,16 @@ export default function Approve() {
   const [sending, setSending] = useState(false);
   const [signature, setSignature] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [linkedWallet, setLinkedWallet] = useState<string | null>(null);
+  const [preflight, setPreflight] = useState<Preflight | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
 
   const load = useCallback(async () => {
     if (!id) return;
     try {
-      await getAccount(); // populates CSRF token
+      const account = await getAccount(); // also populates the CSRF token
+      setLinkedWallet(account.wallet);
       const view = await getIntent(id);
       setIntent(view);
       if (view.signature) setSignature(view.signature);
@@ -46,9 +82,34 @@ export default function Approve() {
     void load();
   }, [load]);
 
+  // Live expiry countdown.
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Check balances against the chain before asking for a signature.
+  const runPreflight = useCallback(async () => {
+    if (!id) return;
+    setChecking(true);
+    try {
+      setPreflight(await getPreflight(id));
+    } catch {
+      setPreflight(null); // the check is advisory; never block on it failing
+    } finally {
+      setChecking(false);
+    }
+  }, [id]);
+
+  const needsPreflight =
+    intent?.chain === 'solana' && intent.status === 'awaiting_approval' && signature === null;
+  useEffect(() => {
+    if (needsPreflight && linkedWallet) void runPreflight();
+  }, [needsPreflight, linkedWallet, runPreflight]);
+
   const send = async () => {
     if (!id) return;
-    const isEvm = intent?.chain === 'robinhood';
+    const isEvm = Boolean(intent && intent.chain !== 'solana');
     if (!isEvm && !signTransaction) return;
     setError(null);
     setSending(true);
@@ -94,7 +155,8 @@ export default function Approve() {
         );
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'The transfer did not go through');
+      setError(friendlyError(err, intent?.token ?? 'tokens'));
+      if (intent?.chain === 'solana') void runPreflight();
     } finally {
       setSending(false);
     }
@@ -115,7 +177,15 @@ export default function Approve() {
 
   const recipient = intent.to ? `@${intent.to}` : 'an account with no wallet yet';
   const done = signature !== null || intent.status === 'confirmed';
-  const dead = ['expired', 'cancelled'].includes(intent.status);
+  const msLeft = new Date(intent.expiresAt).getTime() - now;
+  const dead = ['expired', 'cancelled'].includes(intent.status) || (!done && msLeft <= 0);
+  const txUrl = (sig: string) =>
+    intent.explorerTx ? intent.explorerTx.replace('{sig}', sig) : `https://solscan.io/tx/${sig}`;
+  // Phantom connected to a different account than the one linked to XLedger:
+  // the server builds the transaction for the linked wallet, so it would fail.
+  const wrongWallet =
+    intent.chain === 'solana' && publicKey && linkedWallet && publicKey.toBase58() !== linkedWallet;
+  const blocked = Boolean(wrongWallet || (preflight && !preflight.ok));
 
   return (
     <>
@@ -148,7 +218,9 @@ export default function Approve() {
           {!done && (
             <div>
               <dt>Expires</dt>
-              <dd>{new Date(intent.expiresAt).toLocaleTimeString()}</dd>
+              <dd className={msLeft < 5 * 60_000 ? 'warn-text' : undefined}>
+                {new Date(intent.expiresAt).toLocaleTimeString()} · {countdown(msLeft)}
+              </dd>
             </div>
           )}
           {signature && (
@@ -156,7 +228,7 @@ export default function Approve() {
               <dt>Signature</dt>
               <dd className="mono">
                 <a
-                  href={`https://solscan.io/tx/${signature}`}
+                  href={txUrl(signature)}
                   target="_blank"
                   rel="noreferrer noopener"
                 >
@@ -170,6 +242,36 @@ export default function Approve() {
         {error && <p className="error">{error}</p>}
         {notice && <p className="muted" style={{ marginTop: '1rem' }}>{notice}</p>}
 
+        {!done && !dead && wrongWallet && (
+          <div className="warn">
+            <strong>Wrong wallet connected.</strong> Your wallet app is on {short(publicKey!.toBase58())},
+            but your XLedger account is linked to {short(linkedWallet!)}. Switch accounts in your wallet
+            app, or link this one from your <Link to="/dashboard">account page</Link>.
+          </div>
+        )}
+
+        {!done && !dead && preflight && !preflight.ok && (
+          <div className="warn">
+            <strong>This transfer would fail right now.</strong>
+            <ul>
+              {preflight.problems.map((p) => (
+                <li key={p}>{p}</li>
+              ))}
+            </ul>
+            <button className="btn btn-ghost btn-sm" onClick={() => void runPreflight()} disabled={checking}>
+              {checking ? 'Checking…' : 'I added funds, check again'}
+            </button>
+          </div>
+        )}
+
+        {!done && !dead && preflight?.ok && (
+          <p className="ok-text">
+            ✓ Balance checked: {preflight.sol} SOL
+            {preflight.token !== null && ` · ${preflight.token} ${intent.token}`}
+            {preflight.setupSol && ` · includes ~${preflight.setupSol} SOL to open their ${intent.token} account`}
+          </p>
+        )}
+
         {done ? (
           <Link to="/dashboard">
             <button className="btn btn-primary">Back to your account</button>
@@ -177,7 +279,8 @@ export default function Approve() {
         ) : dead ? (
           <>
             <p className="muted" style={{ marginTop: '1.25rem' }}>
-              This request is {intent.status}. Post the reply again to create a new one.
+              This request {intent.status === 'cancelled' ? 'was cancelled' : 'expired'}. Post the reply
+              again, or use the <Link to="/send">Send</Link> tab, to create a new one.
             </p>
             <Link to="/dashboard">
               <button className="btn btn-ghost" style={{ width: '100%', marginTop: '0.5rem' }}>
@@ -190,8 +293,12 @@ export default function Approve() {
             <WalletButton />
           </div>
         ) : (
-          <button className="btn btn-primary" onClick={send} disabled={sending}>
-            {sending ? 'Waiting for your wallet…' : `Send ${intent.amount} ${intent.token}`}
+          <button className="btn btn-primary" onClick={send} disabled={sending || blocked}>
+            {sending
+              ? 'Waiting for your wallet…'
+              : checking && !preflight
+                ? 'Checking your balance…'
+                : `Send ${intent.amount} ${intent.token}`}
           </button>
         )}
       </div>

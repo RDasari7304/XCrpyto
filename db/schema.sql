@@ -76,11 +76,32 @@ CREATE TABLE IF NOT EXISTS tip_intents (
 ALTER TABLE tip_intents ADD COLUMN IF NOT EXISTS token_symbol TEXT NOT NULL DEFAULT 'SOL';
 ALTER TABLE tip_intents ADD COLUMN IF NOT EXISTS token_mint TEXT;
 ALTER TABLE tip_intents ADD COLUMN IF NOT EXISTS chain TEXT NOT NULL DEFAULT 'solana';
+-- When the bot posted the public "sent" receipt under the original tweet.
+ALTER TABLE tip_intents ADD COLUMN IF NOT EXISTS receipt_posted_at TIMESTAMPTZ;
 ALTER TABLE tip_intents ALTER COLUMN lamports TYPE NUMERIC(78,0);
 ALTER TABLE escrows ALTER COLUMN lamports TYPE NUMERIC(78,0);
 CREATE INDEX IF NOT EXISTS intents_sender_idx ON tip_intents(sender_user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS intents_recipient_idx ON tip_intents(recipient_x_user_id)
   WHERE route = 'escrow';
+
+-- "Pay me" links. Paying one creates a normal tip intent (request_id set),
+-- which the payer approves and signs like any other; confirming it marks the
+-- request paid.
+CREATE TABLE IF NOT EXISTS payment_requests (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  requester_user_id BIGINT NOT NULL REFERENCES users(id),
+  token_symbol      TEXT NOT NULL,
+  amount            NUMERIC(78,0) NOT NULL CHECK (amount > 0),  -- base units
+  note              TEXT,
+  status            TEXT NOT NULL DEFAULT 'open',              -- open | paid | cancelled
+  paid_by_user_id   BIGINT REFERENCES users(id),
+  paid_intent_id    UUID,
+  tx_signature      TEXT,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  paid_at           TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS requests_requester_idx ON payment_requests(requester_user_id, created_at DESC);
+ALTER TABLE tip_intents ADD COLUMN IF NOT EXISTS request_id UUID;
 
 -- Mirror of on-chain escrows, so a recipient can be shown what is waiting.
 -- The chain is the source of truth; this table is an index.

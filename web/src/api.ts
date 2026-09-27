@@ -62,6 +62,17 @@ export interface Account {
     logo: string | null;
     route: string;
     signature: string | null;
+    url: string | null;
+    at: string;
+  }>;
+  received: Array<{
+    from: string | null;
+    avatar: string | null;
+    amount: string;
+    token: string;
+    logo: string | null;
+    signature: string | null;
+    url: string | null;
     at: string;
   }>;
 }
@@ -111,7 +122,19 @@ export interface IntentView {
   expiresAt: string;
   recipientWallet: string | null;
   signature: string | null;
+  explorerTx?: string;
 }
+
+export interface Preflight {
+  ok: boolean;
+  problems: string[];
+  senderWallet: string;
+  sol: string;
+  token: string | null;
+  setupSol: string | null;
+}
+
+export const getPreflight = (id: string) => request<Preflight>(`/api/intents/${id}/preflight`);
 
 export const getIntent = (id: string) => request<IntentView>(`/api/intents/${id}`);
 
@@ -176,3 +199,41 @@ export const getBalances = () =>
 
 export const createTransfer = (body: { toUserId: string; token: string; amount: string }) =>
   request<{ id: string }>('/api/intents', { method: 'POST', body: JSON.stringify(body) });
+
+// -------------------------------------------------------- payment requests
+
+export interface PaymentRequest {
+  id: string;
+  link: string;
+  requester: string | null;
+  requesterAvatar: string | null;
+  amount: string;
+  token: string;
+  logo: string | null;
+  note: string | null;
+  status: 'open' | 'paid' | 'cancelled';
+  paidBy: string | null;
+  txUrl: string | null;
+  createdAt: string;
+  paidAt: string | null;
+  payable?: boolean;
+}
+
+export const createRequest = (body: { token: string; amount: string; note: string }) =>
+  request<{ id: string; link: string }>('/api/requests', { method: 'POST', body: JSON.stringify(body) });
+
+export const myRequests = () => request<{ requests: PaymentRequest[] }>('/api/requests');
+
+export const getRequest = (id: string) => request<PaymentRequest>(`/api/requests/${id}`);
+
+export const payRequest = (id: string) =>
+  request<{ intentId: string }>(`/api/requests/${id}/pay`, { method: 'POST' });
+
+export const cancelRequest = (id: string) =>
+  request<{ status: string }>(`/api/requests/${id}/cancel`, { method: 'POST' });
+
+/** Prefilled X post for sharing a pay link. */
+export function shareOnX(r: { amount: string; token: string; note: string | null; link: string }): string {
+  const text = `Pay me ${r.amount} ${r.token}${r.note ? ` for ${r.note}` : ''} on XLedger 👇`;
+  return `https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(r.link)}`;
+}

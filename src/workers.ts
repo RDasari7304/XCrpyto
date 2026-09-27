@@ -1,7 +1,7 @@
 import { config, db } from './config.js';
 import { parseCommand, validateTipAmount } from './commands.js';
 import { createIntent } from './intents.js';
-import { fromBaseUnits, isEvmChain } from './tokens.js';
+import { explorerTxUrl, fromBaseUnits, isEvmChain, tokenBySymbol } from './tokens.js';
 import { botWhoAmI, fetchMentions, lookupHandle, reply, RateLimited, type Mention } from './x.js';
 import { botOauth1Configured } from './oauth1.js';
 import { rateLimit } from './security.js';
@@ -154,6 +154,56 @@ async function pollMentions(): Promise<void> {
   if (newestId && mentions.length === 0) await setCursor(newestId);
 }
 
+/**
+ * Public receipts. When a tip that started from a mention is confirmed, the bot
+ * replies in that thread tagging sender and recipient with the explorer link.
+ * This is how the recipient finds out they were paid, and it shows everyone in
+ * the thread that the tip actually happened.
+ *
+ * Each row is claimed (receipt_posted_at set) BEFORE posting, so a crash or a
+ * second worker can never post the same receipt twice; the worst case is one
+ * missed receipt. Only tips confirmed in the last hour are eligible, so the
+ * first deploy doesn't announce old test tips. Set TIP_RECEIPTS=false to turn
+ * this off (each reply is a billable X API write).
+ */
+async function postReceipts(): Promise<void> {
+  if (process.env.TIP_RECEIPTS === 'false' || !botOauth1Configured()) return;
+  const { rows } = await db.query<{
+    source_tweet_id: string;
+    lamports: string;
+    token_symbol: string;
+    chain: string;
+    tx_signature: string | null;
+    recipient_x_handle: string | null;
+    sender_handle: string | null;
+  }>(
+    `UPDATE tip_intents t SET receipt_posted_at = now()
+       FROM users s
+      WHERE s.id = t.sender_user_id
+        AND t.id IN (
+          SELECT id FROM tip_intents
+           WHERE status = 'confirmed' AND source_tweet_id IS NOT NULL
+             AND receipt_posted_at IS NULL AND tx_signature IS NOT NULL
+             AND confirmed_at > now() - interval '1 hour'
+           ORDER BY confirmed_at
+           LIMIT 5
+           FOR UPDATE SKIP LOCKED)
+      RETURNING t.source_tweet_id, t.lamports, t.token_symbol, t.chain, t.tx_signature,
+                t.recipient_x_handle, s.x_handle AS sender_handle`,
+  );
+  for (const r of rows) {
+    const token = tokenBySymbol(r.token_symbol);
+    const amount = token ? fromBaseUnits(BigInt(r.lamports), token) : r.lamports;
+    const from = r.sender_handle ? `@${r.sender_handle}` : 'Someone';
+    const to = r.recipient_x_handle ? `@${r.recipient_x_handle}` : 'you';
+    const url = explorerTxUrl(r.chain, r.tx_signature!, config.solana.cluster);
+    await reply(
+      r.source_tweet_id,
+      `✅ ${from} sent ${to} ${amount} ${r.token_symbol}.\n\nSigned in their own wallet. XLedger never holds the funds.\n\n${url}`,
+    );
+  }
+}
+
 /** Expire stale proposals so an old link can never be signed. */
 async function expireIntents(): Promise<void> {
   await db.query(
@@ -215,3 +265,8 @@ if (!botOauth1Configured()) {
 const pollSeconds = Math.max(15, Number(process.env.MENTION_POLL_SECONDS ?? 60));
 void loop('mentions', pollMentions, pollSeconds * 1000);
 void loop('housekeeping', expireIntents, 60_000);
+// Idempotent; lets receipts work before `npm run migrate` has been run.
+void db
+  .query(`ALTER TABLE tip_intents ADD COLUMN IF NOT EXISTS receipt_posted_at TIMESTAMPTZ`)
+  .then(() => loop('receipts', postReceipts, 30_000))
+  .catch((err) => console.error('receipts disabled, schema step failed:', err));

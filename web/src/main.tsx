@@ -9,16 +9,19 @@ import Dashboard from './pages/Dashboard';
 import Approve from './pages/Approve';
 import Send from './pages/Send';
 import Members from './pages/Members';
+import RequestPage from './pages/Request';
+import Pay from './pages/Pay';
 
 function Tabs() {
   const { pathname } = useLocation();
-  // Signed-out landing page has no tabs.
-  if (pathname === '/') return null;
+  // Signed-out landing page and public pay links have no tabs.
+  if (pathname === '/' || pathname.startsWith('/pay/')) return null;
   const cls = ({ isActive }: { isActive: boolean }) => `tab${isActive ? ' on' : ''}`;
   return (
     <nav className="tabs" aria-label="Sections">
       <NavLink to="/dashboard" className={cls}>Account</NavLink>
       <NavLink to="/send" className={cls}>Send</NavLink>
+      <NavLink to="/request" className={cls}>Request</NavLink>
       <NavLink to="/members" className={cls}>Members</NavLink>
     </nav>
   );
@@ -53,6 +56,8 @@ function App() {
             <Route path="/approve/:id" element={<Approve />} />
             <Route path="/send" element={<Send />} />
             <Route path="/members" element={<Members />} />
+            <Route path="/request" element={<RequestPage />} />
+            <Route path="/pay/:id" element={<Pay />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Shell>

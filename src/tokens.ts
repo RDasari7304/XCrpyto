@@ -258,3 +258,14 @@ export function fromBaseUnits(amount: bigint, token: TokenInfo): string {
   const frac = (abs % base).toString().padStart(token.decimals, '0').replace(/0+$/, '');
   return `${neg ? '-' : ''}${abs / base}${frac ? '.' + frac : ''}`;
 }
+
+/**
+ * Public block-explorer link for a confirmed transfer. Solana links carry the
+ * cluster so devnet transactions don't open an empty mainnet page.
+ */
+export function explorerTxUrl(chain: string, signature: string, solanaCluster: string): string {
+  const evm = EVM_CHAINS[chain];
+  if (evm) return `${evm.explorer}/tx/${signature}`;
+  const q = solanaCluster && !/^mainnet/.test(solanaCluster) ? `?cluster=${solanaCluster}` : '';
+  return `https://solscan.io/tx/${signature}${q}`;
+}

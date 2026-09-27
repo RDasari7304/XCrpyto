@@ -9,7 +9,7 @@ import bs58 from 'bs58';
 import { PublicKey, Transaction } from '@solana/web3.js';
 import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, getAssociatedTokenAddressSync } from '@solana/spl-token';
 import { config, db, lamportsToSol, attestorKeypair } from './config.js';
-import { TOKENS, tokenBySymbol, fromBaseUnits, toBaseUnits } from './tokens.js';
+import { TOKENS, tokenBySymbol, fromBaseUnits, toBaseUnits, explorerTxUrl } from './tokens.js';
 import { validateTipAmount } from './commands.js';
 
 /** Format a stored base-unit amount by its token symbol (defaults to SOL). */
@@ -32,6 +32,7 @@ import {
 } from './solana.js';
 import {
   buildIntentTransaction,
+  preflightIntent,
   createIntent,
   confirmIntent,
   getIntentForSender,
@@ -155,7 +156,7 @@ app.get('/api/me', requireAuth, async (req: AuthedRequest, res) => {
     `SELECT evm_wallet FROM users WHERE id = $1`,
     [u.id],
   );
-  const [intents, waiting, sent] = await Promise.all([
+  const [intents, waiting, sent, received] = await Promise.all([
     db.query(
       `SELECT id, recipient_x_handle, lamports, token_symbol, route, expires_at
          FROM tip_intents
@@ -171,11 +172,19 @@ app.get('/api/me', requireAuth, async (req: AuthedRequest, res) => {
       [u.x_user_id],
     ),
     db.query(
-      `SELECT recipient_x_handle, lamports, token_symbol, route, status, tx_signature, created_at
+      `SELECT recipient_x_handle, lamports, token_symbol, chain, route, status, tx_signature, created_at
          FROM tip_intents
         WHERE sender_user_id = $1 AND status = 'confirmed'
         ORDER BY confirmed_at DESC LIMIT 20`,
       [u.id],
+    ),
+    db.query(
+      `SELECT s.x_handle AS from_handle, s.avatar_url, t.lamports, t.token_symbol, t.chain,
+              t.tx_signature, t.confirmed_at
+         FROM tip_intents t JOIN users s ON s.id = t.sender_user_id
+        WHERE t.recipient_x_user_id = $1 AND t.status = 'confirmed'
+        ORDER BY t.confirmed_at DESC LIMIT 20`,
+      [u.x_user_id],
     ),
   ]);
 
@@ -212,7 +221,18 @@ app.get('/api/me', requireAuth, async (req: AuthedRequest, res) => {
       logo: logoFor(r.token_symbol),
       route: r.route,
       signature: r.tx_signature,
+      url: r.tx_signature ? explorerTxUrl(r.chain ?? 'solana', r.tx_signature, config.solana.cluster) : null,
       at: r.created_at,
+    })),
+    received: received.rows.map((r) => ({
+      from: r.from_handle,
+      avatar: avatarFor(r.avatar_url),
+      amount: fmtAmount(r.lamports, r.token_symbol),
+      token: r.token_symbol ?? 'SOL',
+      logo: logoFor(r.token_symbol),
+      signature: r.tx_signature,
+      url: r.tx_signature ? explorerTxUrl(r.chain ?? 'solana', r.tx_signature, config.solana.cluster) : null,
+      at: r.confirmed_at,
     })),
   });
 });
@@ -364,7 +384,22 @@ app.get('/api/intents/:id', requireAuth, async (req: AuthedRequest, res) => {
     expiresAt: intent.expires_at,
     recipientWallet: intent.recipient_wallet,
     signature: intent.tx_signature,
+    // "{sig}" is replaced client-side, so the link is right for every chain.
+    explorerTx: explorerTxUrl(intent.chain ?? 'solana', '{sig}', config.solana.cluster),
   });
+});
+
+app.get('/api/intents/:id/preflight', requireAuth, limiter('preflight', 120, 600), async (req: AuthedRequest, res) => {
+  if (!req.user!.wallet) return fail(res, 400, 'Connect a wallet first');
+  const intent = await getIntentForSender(req.params.id, req.user!.id);
+  if (!intent) return fail(res, 404, 'Tip request not found');
+  try {
+    res.json(await preflightIntent(intent, req.user!.wallet));
+  } catch (err) {
+    if (err instanceof IntentError) return fail(res, 409, err.message);
+    console.error('preflight failed:', err);
+    fail(res, 502, 'Could not check your balance right now.');
+  }
 });
 
 app.post('/api/intents/:id/transaction', requireAuth, requireCsrf, limiter('build', 60, 600), async (req: AuthedRequest, res) => {
@@ -397,6 +432,15 @@ app.post('/api/intents/:id/confirm', requireAuth, requireCsrf, limiter('confirm'
   }
   try {
     await confirmIntent(intent, signature, req.user!.wallet ?? '');
+    // If this tip paid a payment request, close the request.
+    await db.query(
+      `UPDATE payment_requests r
+          SET status = 'paid', paid_by_user_id = t.sender_user_id, paid_intent_id = t.id,
+              tx_signature = t.tx_signature, paid_at = now()
+         FROM tip_intents t
+        WHERE t.id = $1 AND t.status = 'confirmed' AND r.id = t.request_id AND r.status = 'open'`,
+      [intent.id],
+    );
     res.json({ status: 'confirmed', signature });
   } catch (err) {
     if (err instanceof IntentError) return fail(res, 409, err.message);
@@ -637,6 +681,151 @@ app.post('/api/intents', requireAuth, requireCsrf, limiter('web-intent', 30, 360
   res.json({ id: intent.id });
 });
 
+// -------------------------------------------------------- payment requests
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+interface RequestRow {
+  id: string;
+  token_symbol: string;
+  amount: string;
+  note: string | null;
+  status: string;
+  created_at: string;
+  paid_at: string | null;
+  tx_signature: string | null;
+  requester_id: string;
+  requester_handle: string | null;
+  requester_avatar: string | null;
+  requester_wallet: string | null;
+  requester_x_user_id: string;
+  payer_handle: string | null;
+}
+
+const REQUEST_SELECT = `
+  SELECT r.id, r.token_symbol, r.amount, r.note, r.status, r.created_at, r.paid_at, r.tx_signature,
+         u.id AS requester_id, u.x_handle AS requester_handle, u.avatar_url AS requester_avatar,
+         u.wallet AS requester_wallet, u.x_user_id AS requester_x_user_id,
+         p.x_handle AS payer_handle
+    FROM payment_requests r
+    JOIN users u ON u.id = r.requester_user_id
+    LEFT JOIN users p ON p.id = r.paid_by_user_id`;
+
+function requestView(r: RequestRow) {
+  return {
+    id: r.id,
+    link: `${config.webOrigin}/pay/${r.id}`,
+    requester: r.requester_handle,
+    requesterAvatar: avatarFor(r.requester_avatar),
+    amount: fmtAmount(r.amount, r.token_symbol),
+    token: r.token_symbol,
+    logo: logoFor(r.token_symbol),
+    note: r.note,
+    status: r.status,
+    paidBy: r.payer_handle,
+    txUrl: r.tx_signature ? explorerTxUrl('solana', r.tx_signature, config.solana.cluster) : null,
+    createdAt: r.created_at,
+    paidAt: r.paid_at,
+  };
+}
+
+/** Create a "pay me" link for a fixed amount of one Solana token. */
+app.post('/api/requests', requireAuth, requireCsrf, limiter('request-create', 30, 3600), async (req: AuthedRequest, res) => {
+  const u = req.user!;
+  if (!u.wallet) return fail(res, 400, 'Link a wallet on your account page first, so you can be paid.');
+  const { token: symbol, amount, note } = req.body ?? {};
+  const token = typeof symbol === 'string' ? tokenBySymbol(symbol) : null;
+  if (!token || token.chain !== 'solana') return fail(res, 400, 'Pick a supported Solana token.');
+  if (typeof amount !== 'string') return fail(res, 400, 'Enter an amount.');
+  let base: bigint;
+  try {
+    base = toBaseUnits(amount.trim(), token);
+  } catch (err) {
+    return fail(res, 400, err instanceof Error ? err.message : 'Invalid amount');
+  }
+  const amountError = validateTipAmount(base);
+  if (amountError) return fail(res, 400, amountError);
+  const cleanNote =
+    typeof note === 'string' ? note.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 140) || null : null;
+
+  const { rows } = await db.query<{ id: string }>(
+    `INSERT INTO payment_requests (requester_user_id, token_symbol, amount, note)
+     VALUES ($1, $2, $3, $4) RETURNING id`,
+    [u.id, token.symbol, base.toString(), cleanNote],
+  );
+  res.json({ id: rows[0].id, link: `${config.webOrigin}/pay/${rows[0].id}` });
+});
+
+/** The signed-in user's own requests, newest first. */
+app.get('/api/requests', requireAuth, async (req: AuthedRequest, res) => {
+  const { rows } = await db.query<RequestRow>(
+    `${REQUEST_SELECT} WHERE r.requester_user_id = $1 ORDER BY r.created_at DESC LIMIT 50`,
+    [req.user!.id],
+  );
+  res.json({ requests: rows.map(requestView) });
+});
+
+/** Public: anyone with the link can see what is being asked for (no wallet shown). */
+app.get('/api/requests/:id', limiter('request-view', 120, 600), async (req, res) => {
+  if (!UUID_RE.test(req.params.id)) return fail(res, 404, 'Request not found');
+  const { rows } = await db.query<RequestRow>(`${REQUEST_SELECT} WHERE r.id = $1`, [req.params.id]);
+  if (!rows[0]) return fail(res, 404, 'Request not found');
+  res.json({ ...requestView(rows[0]), payable: Boolean(rows[0].requester_wallet) });
+});
+
+/**
+ * Pay a request: creates a tip intent from the signed-in user to the
+ * requester and returns it, so the payer lands on the normal approval page.
+ * Re-opening the link reuses a still-valid pending intent instead of piling up
+ * duplicates.
+ */
+app.post('/api/requests/:id/pay', requireAuth, requireCsrf, limiter('request-pay', 30, 3600), async (req: AuthedRequest, res) => {
+  const payer = req.user!;
+  if (!UUID_RE.test(req.params.id)) return fail(res, 404, 'Request not found');
+  if (!payer.wallet) return fail(res, 400, 'Link a wallet on your account page first.');
+  const { rows } = await db.query<RequestRow>(`${REQUEST_SELECT} WHERE r.id = $1`, [req.params.id]);
+  const r = rows[0];
+  if (!r) return fail(res, 404, 'Request not found');
+  if (r.status !== 'open') return fail(res, 409, `This request is already ${r.status}.`);
+  if (r.requester_id === payer.id) return fail(res, 400, "This is your own request. Share the link with whoever is paying.");
+  if (!r.requester_wallet) return fail(res, 409, `@${r.requester_handle} has no wallet linked right now.`);
+  if (r.requester_wallet === payer.wallet) return fail(res, 400, "You can't pay your own wallet.");
+
+  const existing = await db.query<{ id: string }>(
+    `SELECT id FROM tip_intents
+      WHERE request_id = $1 AND sender_user_id = $2
+        AND status = 'awaiting_approval' AND expires_at > now()
+      ORDER BY created_at DESC LIMIT 1`,
+    [r.id, payer.id],
+  );
+  if (existing.rows[0]) return res.json({ intentId: existing.rows[0].id });
+
+  const token = tokenBySymbol(r.token_symbol);
+  if (!token) return fail(res, 409, 'That token is no longer supported.');
+  const intent = await createIntent({
+    senderUserId: payer.id,
+    recipientXUserId: r.requester_x_user_id,
+    recipientXHandle: r.requester_handle,
+    amount: BigInt(r.amount),
+    token,
+    sourceTweetId: null,
+    requestId: r.id,
+  });
+  if (!intent || typeof intent === 'string') return fail(res, 409, 'Could not start that payment. Try again.');
+  res.json({ intentId: intent.id });
+});
+
+app.post('/api/requests/:id/cancel', requireAuth, requireCsrf, async (req: AuthedRequest, res) => {
+  if (!UUID_RE.test(req.params.id)) return fail(res, 404, 'Request not found');
+  const { rowCount } = await db.query(
+    `UPDATE payment_requests SET status = 'cancelled'
+      WHERE id = $1 AND requester_user_id = $2 AND status = 'open'`,
+    [req.params.id, req.user!.id],
+  );
+  if (!rowCount) return fail(res, 409, 'Only your own open requests can be cancelled.');
+  res.json({ status: 'cancelled' });
+});
+
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
 // Serving the built frontend from this process keeps the API and the page on
@@ -677,6 +866,36 @@ if (config.serveWeb) {
       },
     }),
   );
+  // Pay links get their own preview, so a shared link reads "@you requested 5 USDC".
+  const esc = (s: string) =>
+    s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+  app.get('/pay/:id', async (req, res, next) => {
+    if (!UUID_RE.test(req.params.id)) return next();
+    try {
+      const { rows } = await db.query<RequestRow>(`${REQUEST_SELECT} WHERE r.id = $1`, [req.params.id]);
+      const r = rows[0];
+      if (!r) return next();
+      const v = requestView(r);
+      const title = esc(`@${v.requester} requested ${v.amount} ${v.token}`);
+      const desc = esc(v.note ? `“${v.note}” · Pay it from your own wallet on XLedger.` : 'Pay it from your own wallet on XLedger.');
+      const tags = [
+        `<meta property="og:type" content="website" />`,
+        `<meta property="og:site_name" content="XLedger" />`,
+        `<meta property="og:title" content="${title}" />`,
+        `<meta property="og:description" content="${desc}" />`,
+        `<meta property="og:image" content="${config.baseUrl}/card.png" />`,
+        `<meta name="twitter:card" content="summary_large_image" />`,
+        `<meta name="twitter:title" content="${title}" />`,
+        `<meta name="twitter:description" content="${desc}" />`,
+        `<meta name="twitter:image" content="${config.baseUrl}/card.png" />`,
+      ].join('\n    ');
+      res.setHeader('Cache-Control', 'no-store');
+      res.type('html').send(indexHtml.replace('</head>', `    ${tags}\n  </head>`));
+    } catch {
+      next();
+    }
+  });
+
   app.get(/^\/(?!api|auth|health).*/, (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     res.type('html').send(indexWithCard);
@@ -692,6 +911,23 @@ app.use((_req, res) => fail(res, 404, 'Not found'));
 async function ensureSchema(): Promise<void> {
   await db.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT`);
   await db.query(`CREATE INDEX IF NOT EXISTS users_handle_lower_idx ON users (lower(x_handle))`);
+  await db.query(`CREATE TABLE IF NOT EXISTS payment_requests (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  requester_user_id BIGINT NOT NULL REFERENCES users(id),
+  token_symbol      TEXT NOT NULL,
+  amount            NUMERIC(78,0) NOT NULL CHECK (amount > 0),  -- base units
+  note              TEXT,
+  status            TEXT NOT NULL DEFAULT 'open',              -- open | paid | cancelled
+  paid_by_user_id   BIGINT REFERENCES users(id),
+  paid_intent_id    UUID,
+  tx_signature      TEXT,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  paid_at           TIMESTAMPTZ
+)`);
+  await db.query(
+    `CREATE INDEX IF NOT EXISTS requests_requester_idx ON payment_requests(requester_user_id, created_at DESC)`,
+  );
+  await db.query(`ALTER TABLE tip_intents ADD COLUMN IF NOT EXISTS request_id UUID`);
 }
 
 /** Fill in profile pictures for accounts created before avatars were stored. */

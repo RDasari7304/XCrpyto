@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import bs58 from 'bs58';
 import { useWallet, WalletButton } from '../wallet';
 import { Coin } from '../Coin';
+import { Avatar } from '../Avatar';
 import { evmConnect, evmPersonalSign } from '../evm';
 import { useBtcProbe } from '../btc';
 import {
@@ -140,6 +141,38 @@ export default function Dashboard() {
             ))
           )}
 
+          <h2>Received</h2>
+          {(account.received ?? []).length === 0 ? (
+            <p className="empty">Nothing received yet. Tips sent to @{account.handle} show up here.</p>
+          ) : (
+            account.received.map((r, i) => (
+              <div className="tx" key={i}>
+                <Coin symbol={r.token} logo={r.logo} />
+                <div className="tx-body">
+                  <div className="tx-line">
+                    <span className="tx-amt">+{r.amount}</span>
+                    <span className="tx-sym">{r.token}</span>
+                    <span className="tx-to">from {r.from ? `@${r.from}` : 'someone'}</span>
+                  </div>
+                  <div className="tx-sub">{new Date(r.at).toLocaleDateString()} · in your wallet</div>
+                </div>
+                {r.from && <Avatar handle={r.from} src={r.avatar} size={30} />}
+                {r.signature && (
+                  <div className="tx-right">
+                    <a
+                      href={r.url ?? `https://solscan.io/tx/${r.signature}`}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="tx-sig mono"
+                    >
+                      {short(r.signature)}
+                    </a>
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+
           <h2>Sent</h2>
           {account.sent.length === 0 ? (
             <p className="empty">No tips sent yet.</p>
@@ -158,7 +191,7 @@ export default function Dashboard() {
                 {s.signature && (
                   <div className="tx-right">
                     <a
-                      href={`https://solscan.io/tx/${s.signature}`}
+                      href={s.url ?? `https://solscan.io/tx/${s.signature}`}
                       target="_blank"
                       rel="noreferrer noopener"
                       className="tx-sig mono"
