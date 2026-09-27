@@ -102,6 +102,25 @@ CREATE TABLE IF NOT EXISTS payment_requests (
 );
 CREATE INDEX IF NOT EXISTS requests_requester_idx ON payment_requests(requester_user_id, created_at DESC);
 ALTER TABLE tip_intents ADD COLUMN IF NOT EXISTS request_id UUID;
+ALTER TABLE payment_requests ADD COLUMN IF NOT EXISTS paid_by_wallet TEXT;
+
+-- Tips and payments made through Solana Actions (blinks). The payer can be any
+-- wallet, with or without an XLedger account. Rows start 'pending' when the
+-- unsigned transaction is handed out and turn 'confirmed' only after the
+-- signature is verified on-chain.
+CREATE TABLE IF NOT EXISTS blink_payments (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  recipient_user_id BIGINT NOT NULL REFERENCES users(id),
+  payer_wallet      TEXT NOT NULL,
+  token_symbol      TEXT NOT NULL,
+  amount            NUMERIC(78,0) NOT NULL CHECK (amount > 0),
+  request_id        UUID,
+  status            TEXT NOT NULL DEFAULT 'pending',
+  tx_signature      TEXT UNIQUE,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  confirmed_at      TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS blink_recipient_idx ON blink_payments(recipient_user_id, confirmed_at DESC);
 
 -- Mirror of on-chain escrows, so a recipient can be shown what is waiting.
 -- The chain is the source of truth; this table is an index.

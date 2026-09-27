@@ -11,11 +11,12 @@ import Send from './pages/Send';
 import Members from './pages/Members';
 import RequestPage from './pages/Request';
 import Pay from './pages/Pay';
+import Tip from './pages/Tip';
 
 function Tabs() {
   const { pathname } = useLocation();
   // Signed-out landing page and public pay links have no tabs.
-  if (pathname === '/' || pathname.startsWith('/pay/')) return null;
+  if (pathname === '/' || pathname.startsWith('/pay/') || pathname.startsWith('/tip/')) return null;
   const cls = ({ isActive }: { isActive: boolean }) => `tab${isActive ? ' on' : ''}`;
   return (
     <nav className="tabs" aria-label="Sections">
@@ -58,6 +59,7 @@ function App() {
             <Route path="/members" element={<Members />} />
             <Route path="/request" element={<RequestPage />} />
             <Route path="/pay/:id" element={<Pay />} />
+            <Route path="/tip/:handle" element={<Tip />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Shell>

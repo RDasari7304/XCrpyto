@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Avatar } from '../Avatar';
 import { Coin } from '../Coin';
+import { ActionPanel } from '../ActionPanel';
 import { ApiError, getAccount, getRequest, loginUrl, payRequest, type PaymentRequest } from '../api';
 
 /**
@@ -93,7 +94,7 @@ export default function Pay() {
 
         {req.status === 'paid' ? (
           <p className="ok-text" style={{ fontSize: '0.95rem' }}>
-            ✓ Paid{req.paidBy ? ` by @${req.paidBy}` : ''}.
+            ✓ Paid{req.paidBy ? ` by @${req.paidBy}` : req.paidByWallet ? ` by ${req.paidByWallet}` : ''}.
             {req.txUrl && (
               <>
                 {' '}
@@ -127,6 +128,12 @@ export default function Pay() {
             <p className="muted center" style={{ margin: '0.75rem 0 0', fontSize: '0.82rem' }}>
               You'll review and sign the exact transfer in your own wallet. XLedger never holds funds.
             </p>
+            {!signedIn && (
+              <>
+                <div className="or-divider"><span>or pay with any Solana wallet, no account</span></div>
+                <ActionPanel path={`/api/actions/pay/${id}`} compact />
+              </>
+            )}
           </>
         )}
       </div>

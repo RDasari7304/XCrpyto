@@ -229,3 +229,14 @@ p { margin: 0 0 1rem; }
   .req-actions { flex-direction: column; }
   .payer-head h1 { font-size: 1.5rem; }
 }
+
+/* Blinks / tip jar -------------------------------------------------------- */
+.preset-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.preset-row .btn { flex: 1 1 auto; text-align: center; text-decoration: none; }
+.action-form { display: grid; grid-template-columns: 1fr 7.5rem; gap: 0.5rem; margin-top: 0.75rem; }
+.action-form .btn { grid-column: 1 / -1; }
+.action-done { display: grid; gap: 0.35rem; }
+.action-done-title { margin: 0; font-weight: 700; font-size: 1.1rem; color: var(--accent); }
+select.input { appearance: none; cursor: pointer; }
+.or-divider { display: flex; align-items: center; gap: 0.75rem; margin: 1.4rem 0 1rem; color: var(--muted); font-size: 0.8rem; }
+.or-divider::before, .or-divider::after { content: ''; flex: 1; height: 1px; background: var(--line); }

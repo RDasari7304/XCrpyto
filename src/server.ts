@@ -11,6 +11,7 @@ import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, getAssociatedTokenAddressSync 
 import { config, db, lamportsToSol, attestorKeypair } from './config.js';
 import { TOKENS, tokenBySymbol, fromBaseUnits, toBaseUnits, explorerTxUrl } from './tokens.js';
 import { validateTipAmount } from './commands.js';
+import { actionsCors, actionsRouter, ensureActionsSchema } from './actions.js';
 
 /** Format a stored base-unit amount by its token symbol (defaults to SOL). */
 function fmtAmount(amount: string, symbol: string | null): string {
@@ -52,6 +53,8 @@ import {
 const app = express();
 app.set('trust proxy', 1);
 app.use(securityHeaders);
+// Blink endpoints are public and cross-origin; handled before the strict CORS.
+app.use(actionsCors);
 app.use(cors);
 app.use(express.json({ limit: '16kb' }));
 app.use(cookieParser());
@@ -179,12 +182,20 @@ app.get('/api/me', requireAuth, async (req: AuthedRequest, res) => {
       [u.id],
     ),
     db.query(
-      `SELECT s.x_handle AS from_handle, s.avatar_url, t.lamports, t.token_symbol, t.chain,
-              t.tx_signature, t.confirmed_at
-         FROM tip_intents t JOIN users s ON s.id = t.sender_user_id
-        WHERE t.recipient_x_user_id = $1 AND t.status = 'confirmed'
-        ORDER BY t.confirmed_at DESC LIMIT 20`,
-      [u.x_user_id],
+      // Tips via the bot/approval flow, plus tips sent through blinks (which can
+      // come from any wallet, registered or not).
+      `SELECT * FROM (
+         SELECT s.x_handle AS from_handle, s.avatar_url, NULL::text AS from_wallet,
+                t.lamports, t.token_symbol, t.chain, t.tx_signature, t.confirmed_at
+           FROM tip_intents t JOIN users s ON s.id = t.sender_user_id
+          WHERE t.recipient_x_user_id = $1 AND t.status = 'confirmed'
+         UNION ALL
+         SELECT s.x_handle, s.avatar_url, b.payer_wallet,
+                b.amount, b.token_symbol, 'solana', b.tx_signature, b.confirmed_at
+           FROM blink_payments b LEFT JOIN users s ON s.wallet = b.payer_wallet
+          WHERE b.recipient_user_id = $2 AND b.status = 'confirmed'
+       ) x ORDER BY confirmed_at DESC LIMIT 20`,
+      [u.x_user_id, u.id],
     ),
   ]);
 
@@ -226,6 +237,7 @@ app.get('/api/me', requireAuth, async (req: AuthedRequest, res) => {
     })),
     received: received.rows.map((r) => ({
       from: r.from_handle,
+      fromWallet: r.from_wallet,
       avatar: avatarFor(r.avatar_url),
       amount: fmtAmount(r.lamports, r.token_symbol),
       token: r.token_symbol ?? 'SOL',
@@ -700,13 +712,14 @@ interface RequestRow {
   requester_wallet: string | null;
   requester_x_user_id: string;
   payer_handle: string | null;
+  paid_by_wallet: string | null;
 }
 
 const REQUEST_SELECT = `
   SELECT r.id, r.token_symbol, r.amount, r.note, r.status, r.created_at, r.paid_at, r.tx_signature,
          u.id AS requester_id, u.x_handle AS requester_handle, u.avatar_url AS requester_avatar,
          u.wallet AS requester_wallet, u.x_user_id AS requester_x_user_id,
-         p.x_handle AS payer_handle
+         p.x_handle AS payer_handle, r.paid_by_wallet
     FROM payment_requests r
     JOIN users u ON u.id = r.requester_user_id
     LEFT JOIN users p ON p.id = r.paid_by_user_id`;
@@ -723,6 +736,7 @@ function requestView(r: RequestRow) {
     note: r.note,
     status: r.status,
     paidBy: r.payer_handle,
+    paidByWallet: r.paid_by_wallet ? `${r.paid_by_wallet.slice(0, 4)}…${r.paid_by_wallet.slice(-4)}` : null,
     txUrl: r.tx_signature ? explorerTxUrl('solana', r.tx_signature, config.solana.cluster) : null,
     createdAt: r.created_at,
     paidAt: r.paid_at,
@@ -826,6 +840,8 @@ app.post('/api/requests/:id/cancel', requireAuth, requireCsrf, async (req: Authe
   res.json({ status: 'cancelled' });
 });
 
+app.use(actionsRouter);
+
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
 // Serving the built frontend from this process keeps the API and the page on
@@ -878,6 +894,36 @@ if (config.serveWeb) {
       const v = requestView(r);
       const title = esc(`@${v.requester} requested ${v.amount} ${v.token}`);
       const desc = esc(v.note ? `“${v.note}” · Pay it from your own wallet on XLedger.` : 'Pay it from your own wallet on XLedger.');
+      const tags = [
+        `<meta property="og:type" content="website" />`,
+        `<meta property="og:site_name" content="XLedger" />`,
+        `<meta property="og:title" content="${title}" />`,
+        `<meta property="og:description" content="${desc}" />`,
+        `<meta property="og:image" content="${config.baseUrl}/card.png" />`,
+        `<meta name="twitter:card" content="summary_large_image" />`,
+        `<meta name="twitter:title" content="${title}" />`,
+        `<meta name="twitter:description" content="${desc}" />`,
+        `<meta name="twitter:image" content="${config.baseUrl}/card.png" />`,
+      ].join('\n    ');
+      res.setHeader('Cache-Control', 'no-store');
+      res.type('html').send(indexHtml.replace('</head>', `    ${tags}\n  </head>`));
+    } catch {
+      next();
+    }
+  });
+
+  // Tip jars preview as "Tip @alice" for people whose client doesn't render blinks.
+  app.get('/tip/:handle', async (req, res, next) => {
+    const h = req.params.handle.replace(/^@/, '');
+    if (!/^\w{1,15}$/.test(h)) return next();
+    try {
+      const { rows } = await db.query<{ x_handle: string }>(
+        `SELECT x_handle FROM users WHERE lower(x_handle) = lower($1) AND wallet IS NOT NULL LIMIT 1`,
+        [h],
+      );
+      if (!rows[0]) return next();
+      const title = esc(`Tip @${rows[0].x_handle}`);
+      const desc = esc('Send SOL, USDC and more straight from your wallet. No account needed.');
       const tags = [
         `<meta property="og:type" content="website" />`,
         `<meta property="og:site_name" content="XLedger" />`,
@@ -951,6 +997,7 @@ async function backfillAvatars(): Promise<void> {
 }
 
 void ensureSchema()
+  .then(() => ensureActionsSchema())
   .then(() => backfillAvatars())
   .catch((err) => console.error('startup schema/avatar step failed:', err));
 setInterval(() => void backfillAvatars().catch(() => {}), 6 * 60 * 60 * 1000).unref();

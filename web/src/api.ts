@@ -67,6 +67,7 @@ export interface Account {
   }>;
   received: Array<{
     from: string | null;
+    fromWallet?: string | null;
     avatar: string | null;
     amount: string;
     token: string;
@@ -213,6 +214,7 @@ export interface PaymentRequest {
   note: string | null;
   status: 'open' | 'paid' | 'cancelled';
   paidBy: string | null;
+  paidByWallet?: string | null;
   txUrl: string | null;
   createdAt: string;
   paidAt: string | null;
@@ -237,3 +239,58 @@ export function shareOnX(r: { amount: string; token: string; note: string | null
   const text = `Pay me ${r.amount} ${r.token}${r.note ? ` for ${r.note}` : ''} on XLedger 👇`;
   return `https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(r.link)}`;
 }
+
+// ------------------------------------------------------ Solana Actions
+
+/** One button or form in an Action's GET response. */
+export interface ActionLink {
+  type: 'transaction' | 'post' | 'external-link';
+  label: string;
+  href: string;
+  parameters?: Array<{
+    type?: 'number' | 'text' | 'select';
+    name: string;
+    label?: string;
+    required?: boolean;
+    min?: number;
+    options?: Array<{ label: string; value: string; selected?: boolean }>;
+  }>;
+}
+
+export interface ActionMeta {
+  type: 'action' | 'completed';
+  icon: string;
+  title: string;
+  description: string;
+  label: string;
+  disabled?: boolean;
+  links?: { actions: ActionLink[] };
+}
+
+async function actionFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${API}${path}`, {
+    ...init,
+    headers: init?.body ? { 'Content-Type': 'application/json' } : undefined,
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(res.status, body.message ?? body.error ?? 'Something went wrong');
+  return body as T;
+}
+
+export const getAction = (path: string) => actionFetch<ActionMeta>(path);
+
+export const postAction = (href: string, account: string) =>
+  actionFetch<{ transaction: string; message?: string; links?: { next?: { href: string } } }>(href, {
+    method: 'POST',
+    body: JSON.stringify({ account }),
+  });
+
+export const confirmAction = (href: string, account: string, signature: string) =>
+  actionFetch<ActionMeta>(href, { method: 'POST', body: JSON.stringify({ account, signature }) });
+
+/** Public RPC + cluster, for pages used by people who aren't signed in. */
+export const getPublicConfig = () => actionFetch<{ rpcUrl: string; cluster: string }>('/api/config');
+
+export const tipJarUrl = (handle: string) => `${window.location.origin}/tip/${handle}`;
+export const blinkUrl = (apiPath: string) =>
+  `https://dial.to/?action=${encodeURIComponent(`solana-action:${window.location.origin}${apiPath}`)}`;

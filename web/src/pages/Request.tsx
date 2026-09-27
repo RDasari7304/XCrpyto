@@ -211,7 +211,7 @@ export default function RequestPage() {
               <div className="tx-sub">
                 {r.status === 'paid' ? (
                   <>
-                    Paid by {r.paidBy ? `@${r.paidBy}` : 'someone'} · {when(r.paidAt ?? r.createdAt)}
+                    Paid by {r.paidBy ? `@${r.paidBy}` : r.paidByWallet ?? 'someone'} · {when(r.paidAt ?? r.createdAt)}
                     {r.txUrl && (
                       <>
                         {' · '}

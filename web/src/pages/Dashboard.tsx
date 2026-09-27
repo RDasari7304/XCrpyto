@@ -14,6 +14,8 @@ import {
   walletVerify,
   walletVerifyEvm,
   type Account,
+  tipJarUrl,
+  blinkUrl,
 } from '../api';
 
 function short(addr: string): string {
@@ -28,6 +30,7 @@ export default function Dashboard() {
   const [busy, setBusy] = useState(false);
   const [evmLinkBusy, setEvmLinkBusy] = useState(false);
   const [evmLinkMsg, setEvmLinkMsg] = useState<string | null>(null);
+  const [jarCopied, setJarCopied] = useState(false);
   const btc = useBtcProbe();
 
   const refresh = useCallback(async () => {
@@ -152,7 +155,7 @@ export default function Dashboard() {
                   <div className="tx-line">
                     <span className="tx-amt">+{r.amount}</span>
                     <span className="tx-sym">{r.token}</span>
-                    <span className="tx-to">from {r.from ? `@${r.from}` : 'someone'}</span>
+                    <span className="tx-to">from {r.from ? `@${r.from}` : r.fromWallet ? short(r.fromWallet) : 'someone'}</span>
                   </div>
                   <div className="tx-sub">{new Date(r.at).toLocaleDateString()} · in your wallet</div>
                 </div>
@@ -227,6 +230,56 @@ export default function Dashboard() {
               </p>
             )}
           </div>
+
+          {account.wallet && account.handle && (
+            <>
+              <h2>Your tip jar</h2>
+              <div className="card">
+                <p className="muted" style={{ marginTop: 0 }}>
+                  Anyone can tip you from any Solana wallet, no account needed. Post it on X: wallets
+                  that support blinks show a tip button right inside the post.
+                </p>
+                <div className="link-row" style={{ marginTop: 0 }}>
+                  <input
+                    className="input mono"
+                    readOnly
+                    value={tipJarUrl(account.handle)}
+                    onFocus={(e) => e.target.select()}
+                  />
+                  <button
+                    className="btn btn-ghost"
+                    onClick={() => {
+                      void navigator.clipboard?.writeText(tipJarUrl(account.handle!)).then(() => setJarCopied(true));
+                      setTimeout(() => setJarCopied(false), 1500);
+                    }}
+                  >
+                    {jarCopied ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+                <div className="preset-row" style={{ marginTop: '0.6rem' }}>
+                  <a
+                    className="btn btn-ghost btn-sm"
+                    href={`https://x.com/intent/post?text=${encodeURIComponent('Tip me in SOL, USDC and more, straight from your wallet 👇')}&url=${encodeURIComponent(tipJarUrl(account.handle))}`}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                  >
+                    Share on X
+                  </a>
+                  <Link className="btn btn-ghost btn-sm" to={`/tip/${account.handle}`}>
+                    Preview
+                  </Link>
+                  <a
+                    className="btn btn-ghost btn-sm"
+                    href={blinkUrl(`/api/actions/tip/${account.handle}`)}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                  >
+                    Open as blink
+                  </a>
+                </div>
+              </div>
+            </>
+          )}
 
           <h2>Robinhood Chain wallet</h2>
           <div className="card">
