@@ -215,6 +215,39 @@ export const TOKENS: TokenInfo[] = [
     aliases: ['triplet', '$triplet'],
   },
   {
+    symbol: 'NEET',
+    name: 'NotInEmploymentEducationTraining',
+    chain: 'solana',
+    mint: new PublicKey('Ce2gx9KGXJ6C9Mp5b5x1sn9Mg87JwEbrQby4Zqo3pump'),
+    decimals: 6, // SPL Token program, no transfer fee
+    aliases: ['neet', '$neet'],
+  },
+  {
+    symbol: 'CUPSEY',
+    name: 'Cupsey',
+    chain: 'solana',
+    mint: new PublicKey('6NwarBvDkXhByqVp2Qkq5i9XbtA2B3Bwe8SWGu9vpump'),
+    decimals: 6, // SPL Token program, no transfer fee
+    aliases: ['cupsey', '$cupsey'],
+  },
+  {
+    // The official pump.fun token (not a lookalike): mint starts "pump".
+    symbol: 'PUMP',
+    name: 'Pump',
+    chain: 'solana',
+    mint: new PublicKey('pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn'),
+    decimals: 6, // Token-2022, no transfer fee
+    aliases: ['pump', '$pump'],
+  },
+  {
+    symbol: 'EACC',
+    name: 'Effective Accelerationism',
+    chain: 'solana',
+    mint: new PublicKey('CbcyNo7m1amFWqEQm2m4PLv1UNvpcL3C1Ujm6AkzpKoU'),
+    decimals: 6, // Token-2022, no transfer fee
+    aliases: ['eacc', '$eacc', 'e/acc', '$e/acc'],
+  },
+  {
     symbol: 'AI',
     name: 'Artificial Inu',
     chain: 'robinhood',
